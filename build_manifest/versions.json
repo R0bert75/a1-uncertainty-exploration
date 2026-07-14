@@ -1,0 +1,24 @@
+{
+  "python": "3.11.15",
+  "torch_build": "cpu (2.13.0+cpu, from download.pytorch.org/whl/cpu)",
+  "torch_cuda_available": false,
+  "bsuite": "NOT INSTALLED (unmaintained; pins old gym incompatible with gymnasium 1.3.0 / numpy 2.x) -> DeepSea via sanctioned single-file fallback",
+  "direct_dependencies": {
+    "torch": "2.13.0+cpu",
+    "gymnasium": "1.3.0",
+    "minatar": "1.0.15",
+    "rliable": "1.2.0",
+    "numpy": "2.4.6",
+    "pandas": "3.0.3",
+    "scipy": "1.17.1",
+    "matplotlib": "3.11.0",
+    "seaborn": "0.13.2",
+    "pyyaml": "6.0.3",
+    "tyro": "1.0.15",
+    "pytest": "9.1.1",
+    "ruff": "0.15.21"
+  },
+  "lockfile": "build_manifest/pip_freeze_full.txt",
+  "lockfile_sha256": "791eadee88f9dbdefeb1f10caf7b95e49c4662b8cb5f0df7276f439a6a12ccbe",
+  "n_frozen_packages": 71
+}
