@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# pytest / ruff / mypy caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# --- A1-specific ---
+# figures/ are BUILD ARTIFACTS: rebuilt by `make figures` from logs/*.csv.
+# Committing them risks a figure diverging from its CSV; keep the dir, ignore its contents.
+figures/*
+!figures/.gitkeep
+
+# logs/ CSVs ARE committed (source of truth for figures) — do NOT ignore them.
+# Large per-run checkpoint blobs, if any, stay out:
+*.pt
+*.ckpt
+checkpoints/

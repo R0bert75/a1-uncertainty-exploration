@@ -1,0 +1,25 @@
+# A1 pinned direct dependencies — Python 3.11 (see build_manifest/pip_freeze_full.txt for the full lock)
+#
+# torch is the CPU-only build. Install it from the PyTorch CPU wheel index:
+#   pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+# then install the rest from PyPI:
+#   pip install -r requirements.txt
+#
+# The pinned wheel resolves to torch-2.13.0+cpu (no CUDA; this project targets CPU-scale
+# MinAtar/DeepSea). torch.cuda.is_available() must be False in the reference environment.
+
+torch==2.13.0
+gymnasium==1.3.0
+minatar==1.0.15
+rliable==1.2.0
+numpy==2.4.6
+pandas==3.0.3
+scipy==1.17.1
+matplotlib==3.11.0
+seaborn==0.13.2
+pyyaml==6.0.3
+tyro==1.0.15
+
+# dev
+pytest==9.1.1
+ruff==0.15.21

@@ -1,0 +1,30 @@
+# Example config — schema only (values are placeholders until Session 1 freeze).
+# One config file per (method, env, budget). Seeds are ALWAYS explicit and committed.
+run_id: example_bdqn_deepsea_dev
+role: development            # confirmatory | development | exploratory
+part: A                      # A = DeepSea mechanism, B = MinAtar performance
+method: bdqn                 # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+env: deep_sea
+
+# --- factorial switchboard (Part A); ignored for Part B methods ---
+use_rule: episodic           # episodic | per_step | ensemble_mean
+prior: off                   # on | off
+K: 10                        # ensemble size (5 | 10 | 20)
+
+# --- three-class parameters (C13 audits these) ---
+backbone:                    # class 1: backbone nuisance (tuned on DDQN, shared)
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+ensemble_shared:             # class 2: fixed from published Osband defaults (cited)
+  mask_prob: 1.0
+  head_loss_agg: mean
+factor_specific:             # class 3: only the varied factor's own params may differ
+  prior_scale: null          # set only when prior: on
+  eps_schedule: null         # set only for the baseline / use-rule cells
+
+# --- budget & seeds ---
+env_budget:
+  deep_sea_size: 30
+  episodes: 2000
+seeds: [0, 1, 2, 3, 4]       # explicit; confirmatory DeepSea uses 20/cell
