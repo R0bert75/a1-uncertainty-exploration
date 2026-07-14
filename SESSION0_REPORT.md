@@ -80,10 +80,14 @@ The environment smoke also confirmed: MinAtar Breakout returns a `[10,10,4]` sta
 
 ## 5. Deferred (not done in Session 0, by design or by blocker)
 
-- **GitHub push + tag + OSF mirror — BLOCKED (no GitHub credential).** The full history
-  exists locally with `protocol/` committed first and a `session-0-bootstrap` tag. Push and
-  the two-stage freeze tags (`prereg-draft` → final) happen once a GitHub credential is
-  added.
+- **GitHub push — DONE.** Repo pushed public:
+  `https://github.com/R0bert75/a1-uncertainty-exploration` (branch `main`, tag
+  `session-0-bootstrap`), protocol-first commit history preserved as the public
+  pre-registration provenance. **CI smoke workflow passed on GitHub runners**
+  (CPU-torch assertion + ruff + pytest 12/12 + figure rebuild + C13 audit), independently
+  confirming the pinned environment reproduces off this box.
+- **OSF mirror + two-stage freeze tags (`prereg-draft` → final) — deferred to Session 1**,
+  after the protocol values are filled and frozen.
 - **Protocol values — deferred to Session 1** (the 20-item freeze list is a stub; the
   two-stage freeze and the final OSF mirror are Session-1 work). Scientific runs
   (Session 3 onward) require the final freeze.
