@@ -1,0 +1,40 @@
+name: smoke
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU torch + pinned deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
+
+      - name: Assert CPU-only torch
+        run: |
+          python -c "import torch; assert torch.cuda.is_available() is False, 'expected CPU-only build'; print('torch', torch.__version__)"
+
+      - name: Lint
+        run: ruff check src analysis audits tests
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Rebuild figures from logs only
+        run: |
+          python analysis/make_dummy_logs.py --out logs/dummy_smoke.csv
+          python analysis/make_figures.py --logs logs --out figures
+          test -n "$(ls figures/*.png 2>/dev/null)" || (echo 'no figures produced' && exit 1)
+
+      - name: C13 audit
+        run: python audits/c13_audit.py --configs logs --out audits/c13
