@@ -113,7 +113,9 @@ def bench_minatar(device: str, in_ch: int, n_actions: int, batch: int,
         with torch.no_grad():
             tgt_q = r + 0.99 * tgt(s2).max(1).values
         loss = torch.nn.functional.smooth_l1_loss(q, tgt_q)
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
     _sync(device)
 
     t0 = time.perf_counter()
@@ -123,7 +125,9 @@ def bench_minatar(device: str, in_ch: int, n_actions: int, batch: int,
         with torch.no_grad():
             tgt_q = r + 0.99 * tgt(s2).max(1).values
         loss = torch.nn.functional.smooth_l1_loss(q, tgt_q)
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
     _sync(device)
     dt = time.perf_counter() - t0
     return BenchResult(
@@ -150,7 +154,9 @@ def bench_deepsea(device: str, n: int, k: int, batch: int,
         qa = q.gather(-1, a[:, None, None].expand(batch, k, 1)).squeeze(-1)
         mask = (torch.rand(batch, k, generator=gen).to(device) > 0.5).float()
         loss = (mask * (qa - 0.99 * qn) ** 2).mean()
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
     _sync(device)
 
     t0 = time.perf_counter()
@@ -163,7 +169,9 @@ def bench_deepsea(device: str, n: int, k: int, batch: int,
         qa = q.gather(-1, a[:, None, None].expand(batch, k, 1)).squeeze(-1)
         mask = (torch.rand(batch, k, generator=gen).to(device) > 0.5).float()
         loss = (mask * (qa - 0.99 * qn) ** 2).mean()
-        opt.zero_grad(); loss.backward(); opt.step()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
     _sync(device)
     dt = time.perf_counter() - t0
     return BenchResult(
@@ -198,7 +206,10 @@ def forecast(results: dict) -> dict:
         ms = mn["ms_per_step"]
         out["minatar_gpu_hours_hint"] = {
             "ms_per_gradstep": round(ms, 3),
-            "note": "multiply by real grad-steps-per-run (from a 500k/1M run) then by run counts (240 pilot / 800 gated / 120 held-out) for cap X, Y",
+            "note": (
+                "multiply by real grad-steps-per-run (from a 500k/1M run) then by run "
+                "counts (240 pilot / 800 gated / 120 held-out) for cap X, Y"
+            ),
         }
     return out
 
@@ -238,7 +249,10 @@ def main() -> None:
             "platform": platform.platform(),
             "numpy": np.__version__,
             "batch": args.batch,
-            "note": "Throwaway infra benchmark; shape-representative proxies, not scientific agents.",
+            "note": (
+                "Throwaway infra benchmark; shape-representative proxies, "
+                "not scientific agents."
+            ),
         },
         "benchmarks": [asdict(b) for b in benches],
     }
