@@ -22,6 +22,7 @@ from src.utils.conventions import (  # noqa: E402
     CSVLogger,
     RunContext,
     config_hash,
+    derive_numpy_generator,
     seed_everything,
 )
 
@@ -40,16 +41,20 @@ def main(argv: list[str] | None = None) -> int:
     for method, base in [("ddqn_egreedy", 0.2), ("bdqn", 0.5)]:
         cfg = {"method": method, "env": "deep_sea", "use_rule": "episodic",
                "prior": "off", "K": 10}
+        cell_id = f"{cfg['use_rule']}|{cfg['prior']}|K{cfg['K']}"
         h = config_hash(cfg)
         for seed in range(3):
             ctx = RunContext(run_id=f"dummy_{method}_s{seed}", role="development",
                              part="A", method=method, env="deep_sea", seed=seed,
-                             config_sha256=h)
-            rng = np.random.default_rng(seed)
+                             config_sha256=h, size_class="development")
+            # Derived stream — the same utility the real runs use (no global RNG).
+            rng = derive_numpy_generator(master_seed=0, cell_id=cell_id,
+                                         stream_name="action_noise", seed_index=seed)
             with CSVLogger(args.out, ctx) as log:
-                for s in steps:
+                for ck, s in enumerate(steps):
                     val = float(np.clip(base * (s / steps.max()) + rng.normal(0, 0.05), 0, 1))
-                    log.log(step=int(s), metric="discovery_prob", value=val)
+                    log.log(step=int(s), metric="discovery_prob", value=val,
+                            checkpoint=ck, is_t0=(ck == 0), axis="online")
 
     n = sum(1 for _ in args.out.open()) - 1
     print(f"wrote {args.out} ({n} data rows)")

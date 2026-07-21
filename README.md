@@ -16,8 +16,10 @@ value-based deep RL under low interaction budgets (100k–1M steps).
 Uncertainty-aware exploration methods bundle an uncertainty **estimator** with a rule
 for **using** it. This study separates the two:
 
-- **Part A — controlled mechanism study (DeepSea).** A pre-registered factorial
-  (use-rule × prior × ensemble-size) with exact ground-truth Q\*, run as a
+- **Part A — controlled mechanism study (DeepSea).** A pre-registered structured
+  partial factorial (use-rule × prior × ensemble-size; `use_rule × prior` core at
+  K=10 plus a prior × K axis for the episodic rule — K × use_rule and three-way
+  interactions are not estimable) with exact ground-truth Q\*, run as a
   many-seed replication and extension of the Bootstrapped-DQN mechanism ablations of
   Osband et al. (2016).
 - **Part B — external performance evaluation (MinAtar).** A descriptive,

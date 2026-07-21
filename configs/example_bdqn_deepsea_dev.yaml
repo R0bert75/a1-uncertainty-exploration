@@ -6,10 +6,12 @@ part: A                      # A = DeepSea mechanism, B = MinAtar performance
 method: bdqn                 # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
 env: deep_sea
 
-# --- factorial switchboard (Part A); ignored for Part B methods ---
+# --- structured partial factorial switchboard (Part A); ignored for Part B methods ---
+# use_rule × prior core at K=10, plus a prior × K axis for the episodic rule.
 use_rule: episodic           # episodic | per_step | ensemble_mean
 prior: off                   # on | off
 K: 10                        # ensemble size (5 | 10 | 20)
+arm: episodic|off|K10        # alias: canonical cell_id = "<use_rule>|<prior>|K<K>" (RNG derivation)
 
 # --- three-class parameters (C13 audits these) ---
 backbone:                    # class 1: backbone nuisance (tuned on DDQN, shared)

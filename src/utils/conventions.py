@@ -6,6 +6,9 @@ Three jobs, all frozen here so every run obeys the same contract:
 
 1. **Determinism** (gate C1): one `seed_everything(seed)` call seeds Python, NumPy and
    torch, and puts torch in deterministic mode. A run is reproducible from ``(config, seed)``.
+   Each *random stream* is then derived per cell as ``hash(master_seed, cell_id,
+   stream_name, seed_index)`` (``derive_seed`` and friends) — no stream is reused across
+   cells, so the cross-cell bootstrap is independent by construction (spec v6.3 / plan v4.3).
 2. **CSV logging** (gate C2): every scalar that can appear in a figure is appended to a
    CSV with a fixed schema. Nothing a figure depends on lives only in memory or a
    dashboard. Every row carries a ``role`` field in {confirmatory, development,
@@ -84,6 +87,83 @@ def torch_generator(seed: int):
 
 
 # --------------------------------------------------------------------------- #
+# 1b. Cell-specific RNG derivation (spec v6.3 / plan v4.3, freeze item)
+# --------------------------------------------------------------------------- #
+#
+# Every random stream in a run is derived as
+#
+#     hash(master_seed, cell_id, stream_name, seed_index)
+#
+# and *no stream is ever reused across cells*. The seed labels (0..N-1) are
+# bookkeeping only — pairing across cells by "the same integer seed" carries no
+# statistical meaning, which is why the independent stratified bootstrap is
+# justified by construction. (This retires the v6.2 "same integer seed creates
+# no pairing" wording, which was incorrect: the point is that streams are
+# *derived*, so cells share no randomness even at equal ``seed_index``.)
+#
+# The derivation uses SHA-256 over a UTF-8 key, so it is bit-identical across
+# platforms and Python builds — unlike the builtin ``hash()``, which is salted
+# per process. A pinned regression value guards the exact bytes (see tests).
+
+# The canonical named streams. A run draws each of its random quantities from
+# the stream named for its role; adding a stream here is a versioned change.
+STREAM_NAMES: tuple[str, ...] = (
+    "init",          # network / ensemble-head initialization
+    "env_mapping",   # environment instantiation (DeepSea action-flip mapping, etc.)
+    "replay",        # replay-buffer sampling order
+    "action_noise",  # exploration noise (NoisyNet draws, bootstrap head selection, ...)
+)
+
+# Streams are masked to 63 bits: a non-negative int that is safe for both
+# ``numpy.random.default_rng`` (accepts arbitrary ints) and
+# ``torch.Generator.manual_seed`` (accepts up to 2**64-1), with no sign issues.
+_STREAM_BITS = 63
+
+
+def derive_seed(master_seed: int, cell_id: str, stream_name: str, seed_index: int) -> int:
+    """Derive one stream seed as ``hash(master_seed, cell_id, stream_name, seed_index)``.
+
+    Deterministic and platform-stable (SHA-256 over a UTF-8 key). Distinct
+    ``(cell_id, stream_name, seed_index)`` triples yield independent streams; the
+    same triple always reproduces the same seed. ``cell_id`` is the factorial arm
+    (e.g. ``"episodic|off|K10"`` or its ``arm`` alias); ``seed_index`` is the
+    bookkeeping seed label.
+    """
+    if not isinstance(master_seed, int) or isinstance(master_seed, bool):
+        raise TypeError(f"master_seed must be an int, got {type(master_seed).__name__}")
+    if not isinstance(seed_index, int) or isinstance(seed_index, bool):
+        raise TypeError(f"seed_index must be an int, got {type(seed_index).__name__}")
+    if stream_name not in STREAM_NAMES:
+        raise ValueError(f"stream_name must be one of {STREAM_NAMES}, got {stream_name!r}")
+    key = f"{master_seed}|{cell_id}|{stream_name}|{seed_index}".encode()
+    digest = hashlib.sha256(key).digest()
+    return int.from_bytes(digest[:8], "big") & ((1 << _STREAM_BITS) - 1)
+
+
+def derive_cell_seeds(
+    master_seed: int, cell_id: str, seed_index: int, stream_names: tuple[str, ...] = STREAM_NAMES
+) -> dict[str, int]:
+    """Return ``{stream_name: derived_seed}`` for every stream of one (cell, seed)."""
+    return {s: derive_seed(master_seed, cell_id, s, seed_index) for s in stream_names}
+
+
+def derive_numpy_generator(
+    master_seed: int, cell_id: str, stream_name: str, seed_index: int
+) -> np.random.Generator:
+    """A ``numpy`` Generator seeded from the derived stream (use this, not global state)."""
+    return np.random.default_rng(derive_seed(master_seed, cell_id, stream_name, seed_index))
+
+
+def derive_torch_generator(master_seed: int, cell_id: str, stream_name: str, seed_index: int):
+    """A seeded ``torch.Generator`` for the named derived stream."""
+    if not _HAS_TORCH:
+        raise RuntimeError("torch is not available")
+    g = torch.Generator()
+    g.manual_seed(derive_seed(master_seed, cell_id, stream_name, seed_index))
+    return g
+
+
+# --------------------------------------------------------------------------- #
 # 2. Resolved config + identity hash (C13)
 # --------------------------------------------------------------------------- #
 
@@ -135,12 +215,19 @@ BASE_FIELDS = (
     "part",         # A (DeepSea mechanism) | B (MinAtar performance)
     "method",       # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn | ...
     "env",          # deep_sea | breakout | asterix | ...
-    "seed",
+    "size_class",   # development | confirmatory  (Part A tier; Part B pilot|held-out) (v6.3 App C)
+    "seed",         # bookkeeping seed_index; streams are hash-derived (see derive_seed)
     "config_sha256",  # ties every row back to the committed resolved_config.json (C13)
     "step",         # environment interaction step (the budget axis)
+    "checkpoint",   # checkpoint index at which this metric was measured (v6.3 App C)
+    "is_t0",        # bool: the t0 checkpoint (first success / earliest measurement) (v6.3 App C)
+    "axis",         # online | frozen_policy  (which evaluation axis) (v6.3 App C, C12)
     "metric",       # metric name, e.g. discovery_prob, episode_return, sigma_mean
     "value",
 )
+
+VALID_SIZE_CLASSES = ("development", "confirmatory")
+VALID_AXES = ("online", "frozen_policy")
 
 
 @dataclass
@@ -154,6 +241,7 @@ class RunContext:
     env: str
     seed: int
     config_sha256: str
+    size_class: Literal["development", "confirmatory"] = "development"
     extra: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -161,6 +249,16 @@ class RunContext:
             raise ValueError(f"role must be one of {VALID_ROLES}, got {self.role!r}")
         if self.part not in ("A", "B"):
             raise ValueError(f"part must be 'A' or 'B', got {self.part!r}")
+        if self.size_class not in VALID_SIZE_CLASSES:
+            raise ValueError(
+                f"size_class must be one of {VALID_SIZE_CLASSES}, got {self.size_class!r}"
+            )
+        # A confirmatory size_class only makes sense on a confirmatory run.
+        if self.size_class == "confirmatory" and self.role != "confirmatory":
+            raise ValueError(
+                "size_class='confirmatory' requires role='confirmatory' "
+                f"(got role={self.role!r})"
+            )
         if self.method == "qrdqn" and self.role != "exploratory":
             # Spec v6.1: QR-DQN is exploratory by construction; never in confirmatory aggregates.
             raise ValueError("QR-DQN rows must carry role='exploratory' (spec v6.1 Appendix C)")
@@ -203,20 +301,40 @@ class CSVLogger:
             self._writer.writeheader()
             self._fh.flush()
 
-    def log(self, *, step: int, metric: str, value: float, **extra: Any) -> None:
+    def log(
+        self,
+        *,
+        step: int,
+        metric: str,
+        value: float,
+        checkpoint: int | None = None,
+        is_t0: bool = False,
+        axis: Literal["online", "frozen_policy"] = "online",
+        **extra: Any,
+    ) -> None:
         """Append one metric row. ``extra`` keys become extra columns (only in the header
-        of a fresh file; for an existing file they must already be present)."""
+        of a fresh file; for an existing file they must already be present).
+
+        ``checkpoint`` is the checkpoint index the metric was measured at; ``is_t0`` marks
+        the t0 checkpoint (spec §7 t0 rule); ``axis`` selects the evaluation axis
+        (``online`` vs ``frozen_policy``, gate C12)."""
         if self._writer is None:
             raise RuntimeError("CSVLogger used before open()")
+        if axis not in VALID_AXES:
+            raise ValueError(f"axis must be one of {VALID_AXES}, got {axis!r}")
         row = {
             "run_id": self.ctx.run_id,
             "role": self.ctx.role,
             "part": self.ctx.part,
             "method": self.ctx.method,
             "env": self.ctx.env,
+            "size_class": self.ctx.size_class,
             "seed": self.ctx.seed,
             "config_sha256": self.ctx.config_sha256,
             "step": step,
+            "checkpoint": checkpoint if checkpoint is not None else "",
+            "is_t0": bool(is_t0),
+            "axis": axis,
             "metric": metric,
             "value": value,
         }

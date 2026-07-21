@@ -20,8 +20,8 @@ Estimator from the Use Rule under Low Interaction Budgets.*
 
 ## Two-part identity
 
-- **Part A — controlled mechanism study (DeepSea):** pre-registered factorial replication
-  and extension of Osband et al. (2016).
+- **Part A — controlled mechanism study (DeepSea):** pre-registered structured partial
+  factorial replication and extension of Osband et al. (2016).
 - **Part B — external performance evaluation (MinAtar):** descriptive whole-algorithm
   comparison under equal search budgets. No mechanism attribution; no transfer claim.
 

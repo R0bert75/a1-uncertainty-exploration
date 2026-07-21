@@ -100,3 +100,38 @@ The environment smoke also confirmed: MinAtar Breakout returns a `[10,10,4]` sta
 Local-only for now (8 CPU / ~15 GiB RAM / no GPU). No compute providers connected. Pre-tuning
 work runs locally; the Session-7+ tuning sweeps are the calendar bottleneck that will want a
 burst lane once the user provides multi-cloud context.
+
+## 7. Post-bootstrap sync — spec v6.3 / plan v4.3
+
+Reviewed execution plan **v4.3** against requirements spec **v6.3** and brought the
+Session-0 deliverables current (all changes pre-freeze-safe):
+
+- **Cell-specific RNG derivation utility (now a v4.3 §3 Session-0 deliverable).**
+  Added `derive_seed(master_seed, cell_id, stream_name, seed_index)` and the
+  `derive_cell_seeds` / `derive_numpy_generator` / `derive_torch_generator` helpers to
+  `src/utils/conventions.py`. Streams are SHA-256-derived (platform-stable, unlike builtin
+  `hash()`), 63-bit masked, and never reused across cells — the cross-cell bootstrap is
+  independent by construction. Canonical streams: `init, env_mapping, replay, action_noise`.
+  Unit-tested in `tests/test_conventions.py` (pinned regression value
+  `5171618192257394213`, cross-axis independence, bulk no-collision) and asserted as a
+  named CI step. Retires the v6.2 "same integer seed creates no pairing" wording.
+- **Appendix C schema extensions.** `BASE_FIELDS` gains `size_class`
+  (`development|confirmatory`), `checkpoint`, `is_t0`, and `axis` (`online|frozen_policy`,
+  gate C12). `RunContext` carries `size_class` (with a confirmatory-requires-confirmatory
+  guard); `CSVLogger.log()` stamps `checkpoint`/`is_t0`/`axis`. `make_figures` now derives
+  its required-column set from `BASE_FIELDS` (single source of truth). Config schema gains
+  the `arm` alias field (`<use_rule>|<prior>|K<K>` = the `cell_id`).
+- **Language sync.** "factorial" → "structured partial factorial" in `README.md`,
+  `protocol/preregistration.md`, `protocol/advisor_onepager.md`, and the config comment.
+  ("full factorial", "first", "transfer" were already handled or absent.)
+- **VALIDATION C1** restated to name the derived-stream scheme (utility+tests = Session 0;
+  full-run determinism = Session 3).
+
+Gate re-run after the sync: ruff clean, **pytest 19/19** (was 12), `make figures` rebuilds
+the placeholder from the 14-column dummy CSV, C13 audit "no contrasts yet" (expected).
+
+**Deferred, correctly, to later sessions (per v4.3):** neighbor-set expansion + the
+reproducible-search appendix in `positioning.md` (EVE, Priors Matter 2025, BDQN-scaling
+top tier, the July-2026 distributional-risk audit) — Session 2; the `src/` method files —
+Session 3+; pinned mini-search objectives and the 10/5 dev-seed counts — Session-1 freeze
+values. The grant-note deadline in the plan (July 15) has passed.

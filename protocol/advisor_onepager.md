@@ -26,8 +26,9 @@ episode budget on DeepSea, at `prior=off, K=10`, aggregated over the five confir
 
 ## Why publishable
 
-Systematic **replication and extension** at modern standards: pre-registered factorial,
-named contrasts, fixed estimand hierarchy, exact Q\*, 20 seeds/cell, shared-configuration
+Systematic **replication and extension** at modern standards: pre-registered structured
+partial factorial, named contrasts, fixed estimand hierarchy, exact Q\*, 20 seeds/cell,
+shared-configuration
 purity audits, a decision-relevant uncertainty-quality battery, and a separate
 equal-search-budget MinAtar performance evaluation. A recognised, valued contribution class at RLC.
 

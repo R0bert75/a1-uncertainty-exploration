@@ -30,6 +30,11 @@ jobs:
       - name: Tests
         run: pytest -q
 
+      - name: Assert derived-stream scheme (C1)
+        run: |
+          pytest -q tests/test_conventions.py -k "derive" -x
+          PYTHONPATH=. python -c "from src.utils.conventions import derive_seed; assert derive_seed(0,'episodic|off|K10','init',0) == 5171618192257394213, 'derived-stream regression value drifted'; print('derived-stream scheme OK')"
+
       - name: Rebuild figures from logs only
         run: |
           python analysis/make_dummy_logs.py --out logs/dummy_smoke.csv

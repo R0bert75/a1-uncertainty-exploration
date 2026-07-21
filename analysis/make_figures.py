@@ -25,10 +25,11 @@ matplotlib.use("Agg")  # headless / CI-safe
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 
-REQUIRED_COLUMNS = {
-    "run_id", "role", "part", "method", "env", "seed",
-    "config_sha256", "step", "metric", "value",
-}
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from src.utils.conventions import BASE_FIELDS  # noqa: E402
+
+# Frozen schema is owned by conventions.BASE_FIELDS — never duplicated here (C2).
+REQUIRED_COLUMNS = set(BASE_FIELDS)
 
 
 def load_logs(logs_dir: Path) -> pd.DataFrame:

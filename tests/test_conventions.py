@@ -12,9 +12,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils.conventions import (  # noqa: E402
     BASE_FIELDS,
+    STREAM_NAMES,
     CSVLogger,
     RunContext,
     config_hash,
+    derive_cell_seeds,
+    derive_numpy_generator,
+    derive_seed,
     seed_everything,
     serialize_resolved_config,
 )
@@ -66,6 +70,62 @@ def test_serialize_resolved_config(tmp_path):
     assert payload["_config_sha256"] == config_hash({"method": "bdqn", "K": 10})
 
 
+# --- C1: cell-specific RNG derivation (spec v6.3 / plan v4.3 freeze item) --- #
+
+def test_derive_seed_is_deterministic_and_platform_stable():
+    # Same (master, cell, stream, index) -> same seed, every run, every platform.
+    assert derive_seed(0, "episodic|off|K10", "init", 0) == derive_seed(
+        0, "episodic|off|K10", "init", 0
+    )
+    # Pinned regression value guards the exact byte derivation (SHA-256, big-endian,
+    # 63-bit mask). If this changes, every downstream stream changes — that is a
+    # versioned, documented event, never an accident.
+    assert derive_seed(0, "episodic|off|K10", "init", 0) == 5171618192257394213
+
+
+def test_derive_seed_streams_are_independent_across_every_axis():
+    base = derive_seed(0, "cellA", "init", 0)
+    # different seed_index, cell, stream, and master_seed each give a different stream
+    assert derive_seed(0, "cellA", "init", 1) != base           # seed label
+    assert derive_seed(0, "cellB", "init", 0) != base           # cell (no cross-cell reuse)
+    assert derive_seed(0, "cellA", "replay", 0) != base         # stream name
+    assert derive_seed(1, "cellA", "init", 0) != base           # master seed
+
+
+def test_no_stream_reused_across_cells_bulk():
+    # Every (cell, stream, seed) triple across a small grid must map to a unique seed.
+    seeds = [
+        derive_seed(0, cell, stream, idx)
+        for cell in ("episodic|off|K10", "per_step|off|K10", "episodic|on|K10")
+        for stream in STREAM_NAMES
+        for idx in range(10)
+    ]
+    assert len(seeds) == len(set(seeds)), "a stream seed collided across cells"
+
+
+def test_derive_cell_seeds_covers_all_streams():
+    d = derive_cell_seeds(0, "episodic|off|K10", 3)
+    assert set(d) == set(STREAM_NAMES)
+    assert all(isinstance(v, int) and v >= 0 for v in d.values())
+
+
+def test_derive_numpy_generator_reproducible_and_cell_separated():
+    a = derive_numpy_generator(0, "cellA", "action_noise", 0).random(4)
+    b = derive_numpy_generator(0, "cellA", "action_noise", 0).random(4)
+    c = derive_numpy_generator(0, "cellB", "action_noise", 0).random(4)
+    assert np.array_equal(a, b)          # reproducible
+    assert not np.array_equal(a, c)      # different cell -> different draw
+
+
+def test_derive_seed_rejects_unknown_stream_and_bad_types():
+    with pytest.raises(ValueError):
+        derive_seed(0, "cellA", "not_a_stream", 0)
+    with pytest.raises(TypeError):
+        derive_seed(1.0, "cellA", "init", 0)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        derive_seed(0, "cellA", "init", True)  # bool is not a valid index
+
+
 # --- C2: logging schema + role enforcement --------------------------------- #
 
 def _ctx(**kw):
@@ -99,6 +159,17 @@ def test_invalid_role_and_part_rejected():
         _ctx(role="production")
     with pytest.raises(ValueError):
         _ctx(part="C")
+
+
+def test_size_class_validation():
+    # bad value rejected
+    with pytest.raises(ValueError):
+        _ctx(size_class="pilot")
+    # confirmatory size_class requires confirmatory role
+    with pytest.raises(ValueError):
+        _ctx(role="development", size_class="confirmatory")
+    ok = _ctx(role="confirmatory", size_class="confirmatory")
+    assert ok.size_class == "confirmatory"
 
 
 def test_csv_append_preserves_single_header(tmp_path):

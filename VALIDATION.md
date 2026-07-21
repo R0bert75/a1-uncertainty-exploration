@@ -13,8 +13,12 @@ Legend: `[ ]` not yet · `[~]` in progress · `[x]` passed (with session + evide
   ever conditioned on the ranking of the studied methods. Success/failure of any
   uncertainty-aware method is a *result*, never a correctness condition.
 
-- [ ] **C1 — Determinism.** Same `(config, seed)` reproduces the same curve bit-for-bit,
-  or within documented nondeterminism. _Session 3._
+- [ ] **C1 — Determinism (incl. the derived-stream scheme).** Same `(config, seed)`
+  reproduces the same curve bit-for-bit, or within documented nondeterminism. Every random
+  stream is derived as `hash(master_seed, cell_id, stream_name, seed_index)` with no stream
+  reused across cells — implemented in `src/utils/conventions.py` (`derive_seed`) and
+  unit-tested in `tests/test_conventions.py` (pinned regression value + cross-cell
+  non-overlap). _Utility + tests: Session 0. Full-run determinism: Session 3._
 
 - [ ] **C2 — Logging integrity.** Every metric in a figure exists in a committed CSV;
   `make figures` reads only those CSVs. No figure sourced from in-memory state. _Session 3._
