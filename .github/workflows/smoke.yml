@@ -33,7 +33,7 @@ jobs:
       - name: Assert derived-stream scheme (C1)
         run: |
           pytest -q tests/test_conventions.py -k "derive" -x
-          PYTHONPATH=. python -c "from src.utils.conventions import derive_seed; assert derive_seed(0,'episodic|off|K10','init',0) == 5171618192257394213, 'derived-stream regression value drifted'; print('derived-stream scheme OK')"
+          PYTHONPATH=. python -c "from src.utils.conventions import derive_seed, STREAM_NAMES; assert derive_seed(0,'episodic|off|K10','init',0) == 8011425302454941550, 'derived-stream regression value drifted'; assert len(STREAM_NAMES) == 8, 'stream registry must be the full eight'; print('derived-stream scheme OK')"
 
       - name: Rebuild figures from logs only
         run: |

@@ -107,14 +107,21 @@ Reviewed execution plan **v4.3** against requirements spec **v6.3** and brought 
 Session-0 deliverables current (all changes pre-freeze-safe):
 
 - **Cell-specific RNG derivation utility (now a v4.3 §3 Session-0 deliverable).**
-  Added `derive_seed(master_seed, cell_id, stream_name, seed_index)` and the
-  `derive_cell_seeds` / `derive_numpy_generator` / `derive_torch_generator` helpers to
-  `src/utils/conventions.py`. Streams are SHA-256-derived (platform-stable, unlike builtin
-  `hash()`), 63-bit masked, and never reused across cells — the cross-cell bootstrap is
-  independent by construction. Canonical streams: `init, env_mapping, replay, action_noise`.
-  Unit-tested in `tests/test_conventions.py` (pinned regression value
-  `5171618192257394213`, cross-axis independence, bulk no-collision) and asserted as a
-  named CI step. Retires the v6.2 "same integer seed creates no pairing" wording.
+  Added `derive_seed` / `derive_seed_sequence` / `derive_cell_seeds` /
+  `derive_numpy_generator` / `derive_torch_generator` to `src/utils/conventions.py`.
+  Streams are derived from a **pinned BLAKE2b(digest_size=16) → `numpy.random.SeedSequence`**
+  over a canonical `0x1F`-separated payload (reviewer-specified; platform-stable, and the
+  builtin salted `hash()` is deliberately not used), 63-bit masked for the int form, and
+  never reused across cells — the cross-cell bootstrap is independent by construction. The
+  stream registry is the full **eight** streams: `init, env_mapping, replay, action_noise,
+  bootstrap_mask, eval_episodes, probe_set, noisynet_diag`. Unit-tested in
+  `tests/test_conventions.py` (pinned regression value `8011425302454941550`, SeedSequence
+  reproducibility, cross-axis independence, 8-stream no-collision) and asserted as a named
+  CI step. Retires the v6.2 "same integer seed creates no pairing" wording.
+- **Per-run DeepSea mapping identity (reviewer Fix 4).** Added `deepsea_action_mapping`
+  (bound to the `env_mapping` stream) and `deepsea_mapping_hash` so each run's exact Q\* is
+  computed against that run's own action-direction mapping, the mapping hash is stored with
+  the run, and every Q\*-referenced diagnostic can assert it shares the same mapping.
 - **Appendix C schema extensions.** `BASE_FIELDS` gains `size_class`
   (`development|confirmatory`), `checkpoint`, `is_t0`, and `axis` (`online|frozen_policy`,
   gate C12). `RunContext` carries `size_class` (with a confirmatory-requires-confirmatory

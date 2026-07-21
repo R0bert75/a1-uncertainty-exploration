@@ -90,9 +90,9 @@ def torch_generator(seed: int):
 # 1b. Cell-specific RNG derivation (spec v6.3 / plan v4.3, freeze item)
 # --------------------------------------------------------------------------- #
 #
-# Every random stream in a run is derived as
+# Every random stream in a run is derived from a *stable, pinned* function of
 #
-#     hash(master_seed, cell_id, stream_name, seed_index)
+#     (master_seed, cell_id, stream_name, seed_index)
 #
 # and *no stream is ever reused across cells*. The seed labels (0..N-1) are
 # bookkeeping only — pairing across cells by "the same integer seed" carries no
@@ -101,43 +101,90 @@ def torch_generator(seed: int):
 # no pairing" wording, which was incorrect: the point is that streams are
 # *derived*, so cells share no randomness even at equal ``seed_index``.)
 #
-# The derivation uses SHA-256 over a UTF-8 key, so it is bit-identical across
-# platforms and Python builds — unlike the builtin ``hash()``, which is salted
-# per process. A pinned regression value guards the exact bytes (see tests).
+# Pinned implementation (reviewer requirement, do NOT change without a version
+# bump — every downstream stream shifts if you do):
+#
+#   payload  = canonical UTF-8 serialization "<master_seed>\x1f<cell_id>\x1f"
+#              "<stream_name>\x1f<seed_index>"  (0x1F unit separator; the fields
+#              never contain it, so the mapping is unambiguous)
+#   digest   = BLAKE2b(payload, digest_size=16)          # stable across builds
+#   ss       = numpy.random.SeedSequence(int(digest))    # high-quality spawn
+#
+# The Python builtin ``hash()`` is deliberately NOT used anywhere here: it is
+# salted per process (PYTHONHASHSEED) and would break reproducibility. A pinned
+# regression value guards the exact bytes (see tests).
 
 # The canonical named streams. A run draws each of its random quantities from
-# the stream named for its role; adding a stream here is a versioned change.
+# the stream named for its role; adding/removing/reordering is a versioned change
+# and shifts nothing already derived (names, not positions, key the derivation).
 STREAM_NAMES: tuple[str, ...] = (
-    "init",          # network / ensemble-head initialization
-    "env_mapping",   # environment instantiation (DeepSea action-flip mapping, etc.)
-    "replay",        # replay-buffer sampling order
-    "action_noise",  # exploration noise (NoisyNet draws, bootstrap head selection, ...)
+    "init",            # network / ensemble-head parameter initialization
+    "env_mapping",     # environment + action-direction mapping (DeepSea flip mask)
+    "replay",          # replay-buffer sampling order
+    "action_noise",    # exploration noise (ε-greedy tie-breaks, per-step noise)
+    "bootstrap_mask",  # Bootstrapped-DQN per-transition head masks
+    "eval_episodes",   # evaluation / rollout episode stochasticity
+    "probe_set",       # frozen diagnostic probe-set generation
+    "noisynet_diag",   # NoisyNet measurement-time diagnostic draws (M=30)
 )
 
-# Streams are masked to 63 bits: a non-negative int that is safe for both
-# ``numpy.random.default_rng`` (accepts arbitrary ints) and
-# ``torch.Generator.manual_seed`` (accepts up to 2**64-1), with no sign issues.
-_STREAM_BITS = 63
+# 0x1F (ASCII unit separator) delimits fields in the canonical payload. cell_id /
+# stream_name are ASCII tokens that never contain it, so serialization is injective.
+_FIELD_SEP = "\x1f"
+_DIGEST_SIZE = 16  # BLAKE2b digest bytes
+# When an int seed is needed (torch), mask the digest to 63 bits: non-negative and
+# safe for torch.Generator.manual_seed. numpy paths use the full SeedSequence.
+_SEED_BITS = 63
 
 
-def derive_seed(master_seed: int, cell_id: str, stream_name: str, seed_index: int) -> int:
-    """Derive one stream seed as ``hash(master_seed, cell_id, stream_name, seed_index)``.
+def _canonical_payload(master_seed: int, cell_id: str, stream_name: str, seed_index: int) -> bytes:
+    """Injective UTF-8 serialization of the four fields (pinned; see module notes)."""
+    fields = (str(master_seed), cell_id, stream_name, str(seed_index))
+    return _FIELD_SEP.join(fields).encode("utf-8")
 
-    Deterministic and platform-stable (SHA-256 over a UTF-8 key). Distinct
-    ``(cell_id, stream_name, seed_index)`` triples yield independent streams; the
-    same triple always reproduces the same seed. ``cell_id`` is the factorial arm
-    (e.g. ``"episodic|off|K10"`` or its ``arm`` alias); ``seed_index`` is the
-    bookkeeping seed label.
-    """
+
+def _validate_derive_args(master_seed: int, stream_name: str, seed_index: int) -> None:
     if not isinstance(master_seed, int) or isinstance(master_seed, bool):
         raise TypeError(f"master_seed must be an int, got {type(master_seed).__name__}")
     if not isinstance(seed_index, int) or isinstance(seed_index, bool):
         raise TypeError(f"seed_index must be an int, got {type(seed_index).__name__}")
     if stream_name not in STREAM_NAMES:
         raise ValueError(f"stream_name must be one of {STREAM_NAMES}, got {stream_name!r}")
-    key = f"{master_seed}|{cell_id}|{stream_name}|{seed_index}".encode()
-    digest = hashlib.sha256(key).digest()
-    return int.from_bytes(digest[:8], "big") & ((1 << _STREAM_BITS) - 1)
+
+
+def derive_seed_sequence(
+    master_seed: int, cell_id: str, stream_name: str, seed_index: int
+) -> np.random.SeedSequence:
+    """The canonical ``numpy.random.SeedSequence`` for one (cell, stream, seed).
+
+    Pinned: ``SeedSequence(int(BLAKE2b(canonical_payload, digest_size=16)))``.
+    This is the preferred entry point for numpy RNGs (best-quality spawning).
+    ``cell_id`` is the factorial arm (e.g. ``"episodic|off|K10"`` = the ``arm``
+    alias); ``seed_index`` is the bookkeeping seed label.
+    """
+    _validate_derive_args(master_seed, stream_name, seed_index)
+    digest = hashlib.blake2b(
+        _canonical_payload(master_seed, cell_id, stream_name, seed_index),
+        digest_size=_DIGEST_SIZE,
+    ).digest()
+    return np.random.SeedSequence(int.from_bytes(digest, "big"))
+
+
+def derive_seed(master_seed: int, cell_id: str, stream_name: str, seed_index: int) -> int:
+    """A 63-bit int seed for the named derived stream (for ``torch.manual_seed``).
+
+    Deterministic and platform-stable (BLAKE2b over the canonical payload). Distinct
+    ``(cell_id, stream_name, seed_index)`` triples yield independent streams; the same
+    triple always reproduces the same seed. Prefer :func:`derive_seed_sequence` /
+    :func:`derive_numpy_generator` for numpy; this int form exists for libraries
+    (torch) that take a plain integer seed.
+    """
+    _validate_derive_args(master_seed, stream_name, seed_index)
+    digest = hashlib.blake2b(
+        _canonical_payload(master_seed, cell_id, stream_name, seed_index),
+        digest_size=_DIGEST_SIZE,
+    ).digest()
+    return int.from_bytes(digest, "big") & ((1 << _SEED_BITS) - 1)
 
 
 def derive_cell_seeds(
@@ -150,8 +197,9 @@ def derive_cell_seeds(
 def derive_numpy_generator(
     master_seed: int, cell_id: str, stream_name: str, seed_index: int
 ) -> np.random.Generator:
-    """A ``numpy`` Generator seeded from the derived stream (use this, not global state)."""
-    return np.random.default_rng(derive_seed(master_seed, cell_id, stream_name, seed_index))
+    """A ``numpy`` Generator seeded from the derived SeedSequence (use this, not global state)."""
+    ss = derive_seed_sequence(master_seed, cell_id, stream_name, seed_index)
+    return np.random.default_rng(ss)
 
 
 def derive_torch_generator(master_seed: int, cell_id: str, stream_name: str, seed_index: int):
@@ -161,6 +209,43 @@ def derive_torch_generator(master_seed: int, cell_id: str, stream_name: str, see
     g = torch.Generator()
     g.manual_seed(derive_seed(master_seed, cell_id, stream_name, seed_index))
     return g
+
+
+# --------------------------------------------------------------------------- #
+# 1c. Per-run DeepSea mapping identity (spec v6.3 / plan v4.3, reviewer Fix 4)
+# --------------------------------------------------------------------------- #
+#
+# Each run derives its own DeepSea action-direction mapping from the ``env_mapping``
+# stream, so the optimal-action labels and Q* are specific to THAT run's mapping.
+# ``deepsea_mapping_hash`` fingerprints the mapping; store it with the run and make
+# every Q*-referenced diagnostic (optimal action, action gap, optimal path) assert
+# it is operating on the same mapping — otherwise a diagnostic could silently compare
+# a learned Q against a Q* built for a different mapping.
+
+
+def deepsea_mapping_hash(action_mapping: Any) -> str:
+    """Stable SHA-256 fingerprint of a DeepSea action-direction mapping.
+
+    Accepts a 1-D array / sequence of per-row action-to-direction flips (bool/int).
+    The hash is committed with the run and re-checked by every Q*-referenced
+    diagnostic so ground truth and learned values always share one mapping.
+    """
+    arr = np.asarray(action_mapping)
+    payload = arr.shape, arr.dtype.str, arr.tobytes()
+    blob = repr(payload).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def deepsea_action_mapping(
+    master_seed: int, cell_id: str, seed_index: int, size: int
+) -> np.ndarray:
+    """The per-run DeepSea action-flip mapping (one bool per row) from ``env_mapping``.
+
+    Bound to the run's derived ``env_mapping`` stream so the mapping — and therefore
+    Q* — is reproducible from ``(master_seed, cell_id, seed_index, size)`` alone.
+    """
+    rng = derive_numpy_generator(master_seed, cell_id, "env_mapping", seed_index)
+    return rng.integers(0, 2, size=size).astype(bool)
 
 
 # --------------------------------------------------------------------------- #

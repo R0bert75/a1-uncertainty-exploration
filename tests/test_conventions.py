@@ -16,9 +16,12 @@ from src.utils.conventions import (  # noqa: E402
     CSVLogger,
     RunContext,
     config_hash,
+    deepsea_action_mapping,
+    deepsea_mapping_hash,
     derive_cell_seeds,
     derive_numpy_generator,
     derive_seed,
+    derive_seed_sequence,
     seed_everything,
     serialize_resolved_config,
 )
@@ -77,10 +80,10 @@ def test_derive_seed_is_deterministic_and_platform_stable():
     assert derive_seed(0, "episodic|off|K10", "init", 0) == derive_seed(
         0, "episodic|off|K10", "init", 0
     )
-    # Pinned regression value guards the exact byte derivation (SHA-256, big-endian,
-    # 63-bit mask). If this changes, every downstream stream changes — that is a
-    # versioned, documented event, never an accident.
-    assert derive_seed(0, "episodic|off|K10", "init", 0) == 5171618192257394213
+    # Pinned regression value guards the exact byte derivation (BLAKE2b, digest_size=16,
+    # big-endian, 63-bit mask; canonical 0x1F-separated payload). If this changes, every
+    # downstream stream changes — that is a versioned, documented event, never an accident.
+    assert derive_seed(0, "episodic|off|K10", "init", 0) == 8011425302454941550
 
 
 def test_derive_seed_streams_are_independent_across_every_axis():
@@ -124,6 +127,49 @@ def test_derive_seed_rejects_unknown_stream_and_bad_types():
         derive_seed(1.0, "cellA", "init", 0)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         derive_seed(0, "cellA", "init", True)  # bool is not a valid index
+
+
+def test_stream_registry_is_the_full_eight():
+    # Reviewer Fix 1: the stream registry must cover all eight named streams.
+    assert STREAM_NAMES == (
+        "init",
+        "env_mapping",
+        "replay",
+        "action_noise",
+        "bootstrap_mask",
+        "eval_episodes",
+        "probe_set",
+        "noisynet_diag",
+    )
+
+
+def test_derive_seed_sequence_is_reproducible_and_independent():
+    # SeedSequence is the canonical numpy entry point (reviewer-pinned BLAKE2b path).
+    a = derive_numpy_generator(0, "episodic|off|K10", "replay", 0).random(4)
+    b = derive_numpy_generator(0, "episodic|off|K10", "replay", 0).random(4)
+    c = derive_numpy_generator(0, "episodic|off|K10", "replay", 1).random(4)
+    assert np.array_equal(a, b)          # reproducible across calls
+    assert not np.array_equal(a, c)      # different seed_index -> independent stream
+    ss = derive_seed_sequence(0, "episodic|off|K10", "replay", 0)
+    assert isinstance(ss, np.random.SeedSequence)
+
+
+def test_deepsea_mapping_is_bound_to_env_mapping_stream():
+    # Reviewer Fix 4: Q* is per-run; the mapping is reproducible and per-seed distinct.
+    m0 = deepsea_action_mapping(0, "episodic|off|K10", 0, 8)
+    m0b = deepsea_action_mapping(0, "episodic|off|K10", 0, 8)
+    m1 = deepsea_action_mapping(0, "episodic|off|K10", 1, 8)
+    assert np.array_equal(m0, m0b)                 # reproducible from (seed, cell, size)
+    assert not np.array_equal(m0, m1)              # different seed -> different mapping
+    assert m0.shape == (8,) and m0.dtype == bool
+
+
+def test_deepsea_mapping_hash_is_stable_and_discriminating():
+    m0 = deepsea_action_mapping(0, "episodic|off|K10", 0, 8)
+    m0b = deepsea_action_mapping(0, "episodic|off|K10", 0, 8)
+    m1 = deepsea_action_mapping(0, "episodic|off|K10", 1, 8)
+    assert deepsea_mapping_hash(m0) == deepsea_mapping_hash(m0b)   # same mapping -> same hash
+    assert deepsea_mapping_hash(m0) != deepsea_mapping_hash(m1)    # different mapping -> different
 
 
 # --- C2: logging schema + role enforcement --------------------------------- #
