@@ -22,10 +22,13 @@ Estimator from the Use Rule under Low Interaction Budgets.*
 > **Two numeric values are reserved to the owner's risk judgment and set at draft review, not
 > invented here:** the compute caps **X** and **Y** (GPU-hours). Their *rules, provenance, and order
 > of application* are frozen below (items 4, 17), informed by the Stage-A benchmark forecast in
-> `compute/` (v1.1). **Status (2026-07-21): X = 120 GPU-hours is set (item 4). Y remains open** — it
-> is a *projected-cost* quantity whose credible value depends on measured MinAtar pilot-tier wall-clock
-> (Session 3+), so it is set either as a risk ceiling now or at the pilot freeze. Both scalars are
-> filled before the `prereg-draft` tag is cut.
+> `compute/` (v1.1). **Status (2026-07-21): X = 120 GPU-hours is set (item 4). Y's scalar is deferred to
+> the Session-3 pilot freeze (owner decision)** — Y is a *projected-cost* quantity whose credible value
+> depends on measured MinAtar pilot-tier wall-clock, which does not exist until the pilot tier runs; its
+> **rule and ladder order are frozen now** (item 17) and the scalar is filled via that frozen rule at the
+> pilot freeze as a timestamped, pre-registered amendment. The `prereg-draft` tag is therefore cut with
+> **X set and Y's rule frozen** (scalar pending the pilot freeze); this keeps the external
+> methodological pass unblocked, since it reviews the Y-resolution *procedure*, not a hand-set number.
 
 ---
 
@@ -247,7 +250,18 @@ any confirmatory outcome** (ladder application after confirmatory execution is p
 methods); (4) held-out seeds 10 → 5 with sensitivity note; (5) drop the MinAtar E-cell spot-check;
 (6) drop the QR-DQN exploratory follow-up. **Never cut:** the **six-cell `use_rule × prior` core at
 K = 10**, the dual axes, the EWRL figure, the protocol, the DeepSea confirmatory seeds.
-**[Y — owner to set at draft review; rule + order frozen. Forecast context in `compute/` v1.1.]**
+**Y — scalar deferred to the Session-3 pilot freeze (owner decision, 2026-07-21); the rule and
+ladder order above are frozen now.** Y is a *projected-cost* quantity (total GPU-hours + DeepSea
+CPU-hours the free plan can realistically deliver at 50–60% quota realization), so its credible value
+depends on **measured** MinAtar pilot-tier per-run wall-clock, which does not exist until the pilot
+tier runs. **Frozen resolution procedure:** at the pilot freeze, Y is set to the projected total
+compute the free lanes can deliver at 50–60% quota realization, cross-checked against the §11.4
+go/no-go bands (≤50 nominal · 50–150 normal · 150–300 stretch · 300–500 reduce · >500 redesign); the
+ladder then applies in the frozen order until projected ≤ Y — still **before Gate A and before any
+confirmatory outcome**. This resolution is recorded as a **timestamped, pre-registered amendment**
+(item 18 policy): it fills a scalar via an already-frozen rule using measured inputs; it does not
+change the rule, the ladder order, or any never-cut item. Forecast context: `compute/` v1.1
+§3.3/§11.
 
 **18. Two-stage freeze + amendment policy incl. external-pass time-box + substitute/waiver rule.**
 (1) fill all freeze-list values → `prereg-draft` tag; (2) external pass on the valued draft
@@ -371,6 +385,6 @@ family demote affected analyses to exploratory, permanently.
 
 *Sources of truth: `a1-requirements-and-alternatives-v6.3.md` (§1.1, §2/§2.1, §3.1–§3.4, §6, §7) and
 `A1-claude-science-execution-plan-v4.3.md` (§7 Session 1 brief, §8 gates, Appendices C/D). Every value
-above is quoted or computed from those two documents; where a value is reserved to the owner (caps X,
-Y) or verified against primary papers in Session 2 (the class-2 parameter table), that is stated
-inline.*
+above is quoted or computed from those two documents; where a value is reserved to the owner's risk
+judgment (cap X = 120 GPU-h, set; cap Y scalar deferred to the pilot freeze via a frozen rule) or
+verified against primary papers in Session 2 (the class-2 parameter table), that is stated inline.*
