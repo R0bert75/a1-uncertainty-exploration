@@ -19,10 +19,12 @@ Estimator from the Use Rule under Low Interaction Budgets.*
 > Post-freeze/pre-confirmatory changes are versioned amendments (new tag + OSF, reasons,
 > changed-item list, motivating development outcomes disclosed).
 >
-> **Two numeric values are reserved to the owner's risk judgment and are set at draft review,
-> not invented here:** the compute caps **X** and **Y** (GPU-hours). Their *rules, provenance,
-> and order of application* are frozen below (items 4, 17); only the two scalars await the
-> owner's call, informed by the Stage-A benchmark forecast in `compute/` (v1.1). They are
+> **Two numeric values are reserved to the owner's risk judgment and set at draft review, not
+> invented here:** the compute caps **X** and **Y** (GPU-hours). Their *rules, provenance, and order
+> of application* are frozen below (items 4, 17), informed by the Stage-A benchmark forecast in
+> `compute/` (v1.1). **Status (2026-07-21): X = 120 GPU-hours is set (item 4). Y remains open** — it
+> is a *projected-cost* quantity whose credible value depends on measured MinAtar pilot-tier wall-clock
+> (Session 3+), so it is set either as a risk ceiling now or at the pilot freeze. Both scalars are
 > filled before the `prereg-draft` tag is cut.
 
 ---
@@ -153,8 +155,15 @@ the lower parameter value.
 **4. Final-tier trigger (method-specific formula); cap X GPU-hours.** The final tier runs **iff**
 Σ over the four methods of *(final-tier run count × that method's median pilot-tier per-run
 wall-clock)* **≤ X GPU-hours**. X is fixed at freeze; inputs come from each method's own pilot-tier
-runs. **[X — owner to set at draft review; rule + provenance frozen. Forecast context in
-`compute/A1-compute-cost-and-free-tier-execution-plan-v1.1.md` §3.3/§11.]**
+runs. **X = 120 GPU-hours** (owner-set at draft review, 2026-07-21). Provenance: the largest
+final-tier GPU budget the free lanes (Modal Starter + Kaggle + Studio Lab) can absorb in one
+concentrated campaign at 50–60% quota realization **without touching the confirmatory critical path**
+(which runs on the owner's CPU workstation, not GPU) — the top of the free-tier "normal" go/no-go band
+(`compute/…-v1.1.md` §11.3/§11.4). At the ≈800-run final tier this is a ceiling of ≈9 min median
+pilot wall-clock per run; if the measured pilot median pushes the projection above 120 GPU-h, the
+final tier does not run and no descope is triggered (the held-out and pilot tiers carry the
+performance story). Forecast context: `compute/A1-compute-cost-and-free-tier-execution-plan-v1.1.md`
+§3.3/§11.
 
 **5. DeepSea development sizes; confirmatory-size selection rule + its three size sets; episode
 budget per N.** Development sizes: **N = 10 and N = 20**. Confirmatory-size selection rule
