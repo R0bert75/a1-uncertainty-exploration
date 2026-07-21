@@ -298,13 +298,23 @@ the pipeline config). *Bootstrap-specific parameters cannot be tuned on a single
 excluded from this class.*
 
 **Class 2 — Ensemble-shared nuisance (fixed to explicitly listed values, NOT tuned; identical across
-all cells).** The final pre-registration carries a table — **parameter | value | source or
-justification** — covering: bootstrap **mask probability**, **head-loss aggregation/normalization**,
-**shared-trunk convention**, **head initialization**, **per-head target handling**. Each value cites
-the specific section/experiment of **Osband et al. (2016)**, or is labeled a **documented design
-choice inspired by Osband et al.** where no exact published default exists (their Atari experiments
-used **mask p = 1**; there is no universal "Osband default" for DeepSea). *(The exact values are
-verified against the source papers in Session 2 and filled here before the final freeze.)*
+all cells).** Values verified against the source papers (2026-07-21). Sources: **Osband et al.
+(2016)** *Deep Exploration via Bootstrapped DQN* (arXiv:1602.04621) and **Osband et al. (2018)**
+*Randomized Prior Functions for Deep Reinforcement Learning* (arXiv:1806.03335). Where the two papers
+differ, the **2018 chain/DeepSea experiments** govern, since Part A replicates that setting rather
+than the 2016 Atari setting.
+
+| Parameter | Value (frozen) | Source / justification |
+|---|---|---|
+| **Bootstrap mask probability** | **Ber(0.5)** — each transition included in head *k*'s replay with probability 0.5, independently per head | Osband et al. **2018** §3.1: "50-50 ensemble_buffer, where each transition has a 50% chance of being included in the replay for model k." The 2018 chain/DeepSea setting is the one Part A replicates. *(The 2016 Atari paper used p = 1 "to save on minibatch passes" — an explicit compute compromise, noted there as "ensemble with no bootstrapping at all"; not adopted here.)* Owner-confirmed 2026-07-21. |
+| **Head-loss aggregation / gradient normalization** | Gradients from the K heads into the shared trunk are **normalized by 1/K**; per-head TD losses are otherwise independent (each head's gradient modulated by its own mask) | Osband et al. **2016** §6.1 + Appendix D.2: "We found the best final scores by normalizing the gradients by 1/K." The mask mₖₜ modulates each head's gradient (2016 Alg. 1 / Eq. for ∇Qₖ). |
+| **Shared-trunk convention** | Single shared feature trunk; **K independent value heads split after the shared representation** (for DeepSea's small tabular-scale observations the trunk is the shared hidden representation, heads are the output layers) | Osband et al. **2016** §6 / Fig. 1a: "split 10 separate bootstrap heads after the convolutional layer"; architecture "identical to DQN except we split K heads." Documented design choice for the DeepSea backbone scale (no convolutional stack at DeepSea resolution). |
+| **Head initialization** | Each head **independently randomly initialized** (independent random parameters per head); this random initialization is the diversity prior | Osband et al. **2016** §5: "Bootstrapped DQN relies upon random initialization of the network weights as a prior"; "each of our Qₖ heads has a unique target network … small differences at initialization may become bigger." |
+| **Per-head target handling** | **K per-head target networks** — each head Qₖ(s,a;θ) trained against its own target network Qₖ(s,a;θ⁻); targets synced at the shared target-update cadence (a Class-1 backbone parameter) | Osband et al. **2016** §3: "each one of these value function heads Qₖ(s,a;θ) is trained against its own target network Qₖ(s,a;θ⁻)." |
+
+*The `prior=on` cells additionally carry a fixed, untrainable random **prior function** per head, with
+predictions = trainable net + prior (Osband et al. 2018 §3, Alg. 1); the prior **scale** is the only
+factor-specific tunable (Class 3), not a Class-2 constant.*
 
 **Class 3 — Factor-specific parameters (the only per-factor tuning; objectives pinned).**
 `prior_scale` (one mini-search; selected by IQM of `(episodic, on, 10)` on dev sizes; shared by all
@@ -386,5 +396,6 @@ family demote affected analyses to exploratory, permanently.
 *Sources of truth: `a1-requirements-and-alternatives-v6.3.md` (§1.1, §2/§2.1, §3.1–§3.4, §6, §7) and
 `A1-claude-science-execution-plan-v4.3.md` (§7 Session 1 brief, §8 gates, Appendices C/D). Every value
 above is quoted or computed from those two documents; where a value is reserved to the owner's risk
-judgment (cap X = 120 GPU-h, set; cap Y scalar deferred to the pilot freeze via a frozen rule) or
-verified against primary papers in Session 2 (the class-2 parameter table), that is stated inline.*
+judgment (cap X = 120 GPU-h, set; cap Y scalar deferred to the pilot freeze via a frozen rule), that
+is stated inline. The Class-2 nuisance-parameter table is valued and cited against Osband et al. 2016
+(arXiv:1602.04621) and 2018 (arXiv:1806.03335).*

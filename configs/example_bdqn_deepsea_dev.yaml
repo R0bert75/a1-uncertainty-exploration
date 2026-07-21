@@ -18,9 +18,9 @@ backbone:                    # class 1: backbone nuisance (tuned on DDQN, shared
   lr: 0.0005
   batch_size: 32
   gamma: 0.99
-ensemble_shared:             # class 2: fixed from published Osband defaults (cited)
-  mask_prob: 1.0
-  head_loss_agg: mean
+ensemble_shared:             # class 2: frozen in protocol/preregistration.md (Osband 2016/2018, cited)
+  mask_prob: 0.5             # Ber(0.5) per-transition inclusion (Osband et al. 2018 §3.1, 50-50 buffer)
+  head_loss_agg: grad_norm_1_over_k   # gradients to shared trunk normalized by 1/K (Osband et al. 2016 §6.1/App D.2)
 factor_specific:             # class 3: only the varied factor's own params may differ
   prior_scale: null          # set only when prior: on
   eps_schedule: null         # set only for the baseline / use-rule cells
