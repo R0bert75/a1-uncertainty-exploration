@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "device": "cuda",
+    "threads": null,
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_available": true,
+    "gpu_name": "NVIDIA A10",
+    "python": "3.11.5",
+    "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.35",
+    "numpy": "2.4.6",
+    "batch": 64,
+    "note": "Throwaway infra benchmark; shape-representative proxies, not scientific agents."
+  },
+  "benchmarks": [
+    {
+      "label": "minatar_dqn_ch4_a6",
+      "device": "cuda",
+      "batch": 64,
+      "warmup_steps": 15,
+      "timed_steps": 200,
+      "ms_per_step": 1.599983755000003,
+      "steps_per_sec": 625.0063457675533,
+      "extra": {
+        "in_ch": 4,
+        "n_actions": 6
+      }
+    },
+    {
+      "label": "deepsea_ens_N20_K10",
+      "device": "cuda",
+      "batch": 64,
+      "warmup_steps": 15,
+      "timed_steps": 200,
+      "ms_per_step": 2.506819535,
+      "steps_per_sec": 398.9118426907424,
+      "extra": {
+        "N": 20,
+        "K": 10
+      }
+    },
+    {
+      "label": "deepsea_ens_N20_K20",
+      "device": "cuda",
+      "batch": 64,
+      "warmup_steps": 15,
+      "timed_steps": 200,
+      "ms_per_step": 3.7616373099999922,
+      "steps_per_sec": 265.84168477422986,
+      "extra": {
+        "N": 20,
+        "K": 20
+      }
+    },
+    {
+      "label": "deepsea_ens_N40_K20",
+      "device": "cuda",
+      "batch": 64,
+      "warmup_steps": 15,
+      "timed_steps": 200,
+      "ms_per_step": 3.772506965,
+      "steps_per_sec": 265.0757200126203,
+      "extra": {
+        "N": 40,
+        "K": 20
+      }
+    }
+  ],
+  "forecast": {
+    "deepsea_confirmatory_1100_runs": {
+      "20000_gradsteps": {
+        "cpu_hours_serial": 15.3,
+        "wall_h_at_4x": 3.8,
+        "wall_h_at_6x": 2.6
+      },
+      "50000_gradsteps": {
+        "cpu_hours_serial": 38.3,
+        "wall_h_at_4x": 9.6,
+        "wall_h_at_6x": 6.4
+      },
+      "100000_gradsteps": {
+        "cpu_hours_serial": 76.6,
+        "wall_h_at_4x": 19.1,
+        "wall_h_at_6x": 12.8
+      }
+    },
+    "minatar_gpu_hours_hint": {
+      "ms_per_gradstep": 1.6,
+      "note": "multiply by real grad-steps-per-run (from a 500k/1M run) then by run counts (240 pilot / 800 gated / 120 held-out) for cap X, Y"
+    }
+  }
+}
