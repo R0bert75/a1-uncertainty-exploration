@@ -163,7 +163,11 @@ path and cannot be treated as free. Implications for the plan:
 - **DeepSea confirmatory runs feed cap Y** (the descope trigger, §11) alongside GPU hours —
   the projected-total-compute number that trips the ladder must include CPU wall-clock, not
   just GPU-hours.
-- **If the user's "VPS" is this ephemeral sandbox, Part A has no durable home** — see §12.
+- **Part A's durable home is confirmed: the owner's persistent workstation** (~8-core /
+  **16 GB RAM** — the v1.0 "24 GB" was wrong), not the ephemeral Claude Science sandbox
+  (which is used only for interactive/bootstrap work). RAM is not the binding constraint —
+  the DeepSea probe peaked at ~383 MB RSS — so 16 GB is ample; the constraint is wall-clock
+  on 8 cores. See §12.
 
 ### 3.4 Runtime scenarios
 
@@ -493,14 +497,16 @@ bottleneck — plan a dedicated CPU box or accept the calendar cost.
 provider temp output on Modal Volume / Kaggle output / Drive / Studio Lab storage; ledger on
 GitHub+local; selected checkpoints local; OSF/Zenodo immutable release at submission).
 
-**v1.1 caveat — the "existing VPS" assumption must be resolved.** v1.0 assigns all DeepSea +
-analysis + canonical log storage + "two backups" to an "existing 8-vCPU/24-GB VPS." The
-Claude Science box is **8 CPU / 15 GiB RAM / ~1–3 GiB free disk and ephemeral** (workspace
-is swept; durable state lives in the artifact store). If a real persistent user VPS exists,
-v1.0's storage plan stands. If "local" means this sandbox, then the ≈1,100 confirmatory
-DeepSea runs + canonical CSVs + backups **have no durable home here** and must land in the
-artifact store or the user's own machine. **This needs a one-line answer from the owner**
-(see §14).
+**v1.1 update — the storage question is RESOLVED (owner-confirmed 2026-07-21).** The
+durable home is the owner's **persistent workstation (~8-core / 16 GB RAM)** — *not* the
+"8-vCPU / 24-GB VPS" quoted in v1.0 (that RAM figure was wrong) and *not* the Claude Science
+sandbox (which is **8 CPU / 15 GiB RAM / ~1–3 GiB free disk and ephemeral** — workspace
+swept, durable state only in the artifact store; used for interactive/bootstrap work only).
+With a real persistent machine confirmed, **v1.0's storage plan stands, corrected to 16 GB**:
+the ≈1,100 confirmatory DeepSea runs + canonical CSV logs + two backups live on the
+workstation, mirrored to GitHub (source/configs/ledger) and the artifact store; the immutable
+OSF/Zenodo release is cut at submission. Memory is not binding (DeepSea probe peaked ~383 MB
+RSS); the only real cost on this machine is wall-clock on 8 cores (§3.3).
 
 ---
 
@@ -532,8 +538,9 @@ Pre-freeze-eligible now:
    available backend, **and** the real DeepSea agent CPU benchmark (§3.3).
 7. Complete the §11 worksheet → **set caps X and Y** → feed them into the Session-1 freeze.
 8. Apply for Modal academic credits (and the wider net) without making approval a dependency.
-9. **Answer the storage question (§12):** is there a persistent user VPS, or is Part A's
-   ≈1,100-run CPU workload to be hosted elsewhere?
+9. ~~**Answer the storage question (§12).**~~ **RESOLVED (2026-07-21):** Part A runs on the
+   owner's persistent 16 GB workstation; canonical logs live there, mirrored to GitHub + the
+   artifact store. No separate VPS to provision.
 
 Post-freeze only (blocked until the final prereg tag): Stages B–E (all sweeps).
 
