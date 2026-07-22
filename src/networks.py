@@ -111,8 +111,20 @@ class MLPQNetwork(nn.Module):
         for head in self.heads:
             _init_linear_(head, generator)
 
+    def trunk_features(self, obs: torch.Tensor) -> torch.Tensor:
+        """Shared representation ``[batch, feature_dim]`` (the trunk output before the heads).
+
+        Exposed so the ensemble agent can attach a gradient hook to the shared features —
+        the Osband et al. (2016) 1/K trunk-gradient normalization is applied to *this*
+        tensor's backward gradient, leaving each head's own gradient unscaled.
+        """
+        return self.trunk(obs)
+
+    def heads_forward(self, features: torch.Tensor) -> torch.Tensor:
+        """Per-head Q-values ``[batch, n_heads, n_actions]`` from precomputed features."""
+        return torch.stack([head(features) for head in self.heads], dim=1)
+
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         """Map observations to per-head Q-values, shape ``[batch, n_heads, n_actions]``."""
-        features = self.trunk(obs)
-        # Stack heads along a new axis: [batch, n_heads, n_actions].
-        return torch.stack([head(features) for head in self.heads], dim=1)
+        # trunk then heads; split out so the ensemble can hook the shared features.
+        return self.heads_forward(self.trunk_features(obs))

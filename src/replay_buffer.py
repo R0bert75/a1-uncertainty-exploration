@@ -98,18 +98,22 @@ class ReplayBuffer:
     def can_sample(self, batch_size: int) -> bool:
         return self._size >= batch_size
 
-    def sample(self, batch_size: int) -> Transition:
-        """Draw a uniform minibatch (with replacement) via the ``replay`` stream.
+    def sample_indices(self, batch_size: int) -> np.ndarray:
+        """Draw ``batch_size`` uniform row indices (with replacement) via the ``replay`` stream.
 
-        Sampling with replacement is the standard DQN convention and keeps the draw a
-        single deterministic ``rng.integers`` call. Returns torch tensors ready for a
-        learning step.
+        The single deterministic ``rng.integers`` draw that defines a minibatch. Exposed so
+        the ensemble agent can select the *same* transitions and then look up their stored
+        per-head bootstrap masks — without the buffer needing to know about masks (gate
+        C11: identical sampling code path across methods).
         """
         if not self.can_sample(batch_size):
             raise ValueError(
                 f"cannot sample {batch_size} from a buffer of size {self._size}"
             )
-        idx = self._rng.integers(0, self._size, size=batch_size)
+        return self._rng.integers(0, self._size, size=batch_size)
+
+    def gather(self, idx: np.ndarray) -> Transition:
+        """Materialize the transitions at ``idx`` as torch tensors (no RNG draw)."""
         return Transition(
             obs=torch.as_tensor(self._obs[idx]),
             action=torch.as_tensor(self._action[idx]),
@@ -117,3 +121,12 @@ class ReplayBuffer:
             next_obs=torch.as_tensor(self._next_obs[idx]),
             done=torch.as_tensor(self._done[idx]),
         )
+
+    def sample(self, batch_size: int) -> Transition:
+        """Draw a uniform minibatch (with replacement) via the ``replay`` stream.
+
+        Sampling with replacement is the standard DQN convention. Equivalent to
+        ``gather(sample_indices(batch_size))`` — one deterministic ``rng.integers`` call —
+        so DDQN and the ensemble consume the ``replay`` stream identically.
+        """
+        return self.gather(self.sample_indices(batch_size))

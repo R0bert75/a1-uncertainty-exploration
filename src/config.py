@@ -51,7 +51,9 @@ VALID_PRIORS = ("on", "off")
 VALID_ENVS = ("deep_sea", "breakout", "asterix", "seaquest", "freeway", "space_invaders")
 
 # What the factories can actually instantiate right now (the rest raise NotImplementedError).
-IMPLEMENTED_METHODS = ("ddqn_egreedy",)
+# ``bdqn`` builds for prior=off (the Bootstrapped-DQN ensemble); prior=on is RP-BDQN
+# (randomized prior functions), not yet implemented — build_agent raises for it.
+IMPLEMENTED_METHODS = ("ddqn_egreedy", "bdqn")
 IMPLEMENTED_ENVS = ("deep_sea",)
 
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
@@ -114,6 +116,11 @@ class RunConfig:
     def cell_id(self) -> str:
         """Canonical RNG-derivation cell id (== the config's ``arm``)."""
         return self.data["cell_id"]
+
+    @property
+    def prior(self) -> str | None:
+        """Part A prior switch (``on``/``off``); ``None`` for Part B methods that omit it."""
+        return self.data.get("prior")
 
     @property
     def config_sha256(self) -> str:
@@ -346,28 +353,66 @@ def build_agent(cfg: RunConfig, seed_index: int):
         cfg.env == "deep_sea",
         f"build_agent currently wires deep_sea only, got env={cfg.env!r}",
     )
-    from src.ddqn import DDQNAgent, DDQNConfig
-
     _, obs_dim, n_actions = _deep_sea_dims(cfg)
     backbone = cfg.data.get("backbone") or {}
     factor = cfg.data.get("factor_specific") or {}
 
-    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions}
-    # Backbone (Class-1) — pass through only what the config specifies.
-    for src_key, dst_key in (("lr", "lr"), ("batch_size", "batch_size"), ("gamma", "gamma")):
-        if backbone.get(src_key) is not None:
-            kwargs[dst_key] = backbone[src_key]
+    if cfg.method == "ddqn_egreedy":
+        return _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
+    if cfg.method == "bdqn":
+        return _build_bdqn(cfg, obs_dim, n_actions, backbone, seed_index)
+    raise NotImplementedError(f"no factory branch for method {cfg.method!r}")  # unreachable
+
+
+def _apply_backbone(kwargs: dict[str, Any], backbone: dict[str, Any]) -> None:
+    """Copy the Class-1 backbone nuisances the config actually specifies into ``kwargs``."""
+    for key in ("lr", "batch_size", "gamma"):
+        if backbone.get(key) is not None:
+            kwargs[key] = backbone[key]
     for opt in ("hidden_sizes", "buffer_capacity", "min_buffer", "target_update_period"):
         if backbone.get(opt) is not None:
             kwargs[opt] = tuple(backbone[opt]) if opt == "hidden_sizes" else backbone[opt]
+
+
+def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
+    from src.ddqn import DDQNAgent, DDQNConfig
+
+    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions}
+    _apply_backbone(kwargs, backbone)
     # ε schedule (Class-3) — a nested mapping when specified.
     eps = factor.get("eps_schedule")
     if isinstance(eps, dict):
         for key in ("eps_start", "eps_end", "eps_decay_steps"):
             if eps.get(key) is not None:
                 kwargs[key] = eps[key]
-
     config = DDQNConfig(**kwargs)
     return DDQNAgent(
+        config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index
+    )
+
+
+def _build_bdqn(cfg, obs_dim, n_actions, backbone, seed_index):
+    from src.bdqn import BDQNAgent, BDQNConfig
+
+    # prior=on is RP-BDQN (randomized prior functions) — a separate agent, not yet built.
+    _require(
+        cfg.prior == "off",
+        f"method 'bdqn' builds the Bootstrapped-DQN ensemble (prior=off); prior={cfg.prior!r} "
+        "is RP-BDQN (randomized prior functions), which is not yet implemented.",
+    )
+    kwargs: dict[str, Any] = {
+        "obs_dim": obs_dim,
+        "n_actions": n_actions,
+        "K": cfg.data["K"],
+        "use_rule": cfg.data["use_rule"],
+    }
+    _apply_backbone(kwargs, backbone)
+    # Class-2 ensemble parameters — pass through what the config sets (frozen in protocol).
+    shared = cfg.data.get("ensemble_shared") or {}
+    for key in ("mask_prob", "head_loss_agg"):
+        if shared.get(key) is not None:
+            kwargs[key] = shared[key]
+    config = BDQNConfig(**kwargs)
+    return BDQNAgent(
         config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index
     )

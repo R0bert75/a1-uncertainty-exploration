@@ -186,11 +186,42 @@ def test_write_resolved_round_trip(tmp_path):
 # --------------------------------------------------------------------------- #
 # Not-yet-implemented methods/envs fail loudly, not silently
 # --------------------------------------------------------------------------- #
+def _base_dev_bdqn() -> dict:
+    """A runnable Bootstrapped-DQN (prior=off) development cell."""
+    return {
+        "run_id": "t_bdqn_dev",
+        "role": "development",
+        "part": "A",
+        "method": "bdqn",
+        "env": "deep_sea",
+        "master_seed": 0,
+        "use_rule": "episodic",
+        "prior": "off",
+        "K": 5,
+        "arm": "episodic|off|K5",
+        "backbone": {"lr": 5e-4, "batch_size": 16, "gamma": 0.99, "hidden_sizes": [16]},
+        "ensemble_shared": {"mask_prob": 0.5, "head_loss_agg": "grad_norm_1_over_k"},
+        "factor_specific": {"prior_scale": None, "eps_schedule": None},
+        "env_budget": {"deep_sea_size": 5, "episodes": 50},
+        "seeds": [0, 1, 2],
+    }
+
+
 def test_unimplemented_method_raises_not_implemented():
     d = _base_dev_ddqn()
-    d.update(method="bdqn", K=10, arm="episodic|off|K10")
+    d.update(method="noisynet")  # recognized in the vocabulary, no factory branch yet
     cfg = resolve_config(d)
     with pytest.raises(NotImplementedError):
+        build_agent(cfg, 0)
+
+
+def test_rp_bdqn_prior_on_is_not_yet_implemented():
+    # method 'bdqn' builds the ensemble for prior=off only; prior=on is RP-BDQN.
+    d = _base_dev_bdqn()
+    d.update(prior="on", arm="episodic|on|K5",
+             factor_specific={"prior_scale": 3.0, "eps_schedule": None})
+    cfg = resolve_config(d)
+    with pytest.raises(ConfigError, match="RP-BDQN"):
         build_agent(cfg, 0)
 
 
@@ -223,6 +254,29 @@ def test_factories_build_and_step_a_ddqn_run_from_config():
         obs = nobs
         step += 1
     assert step == cfg.data["env_budget"]["deep_sea_size"]   # one row per step
+
+
+def test_factories_build_and_step_a_bdqn_ensemble_from_config():
+    pytest.importorskip("torch")
+    cfg = resolve_config(_base_dev_bdqn())
+    env = build_env(cfg, seed_index=0)
+    agent = build_agent(cfg, seed_index=0)
+    assert type(agent).__name__ == "BDQNAgent"
+    assert agent.K == 5  # 10-head would be the default; the config wins
+
+    obs, _ = env.reset()
+    obs = obs.ravel().astype("float32")
+    agent.on_episode_start()
+    step, terminated = 0, False
+    while not terminated:
+        a = agent.select_action(obs, step=step)
+        nobs, r, terminated, _, _ = env.step(a)
+        nobs = nobs.ravel().astype("float32")
+        agent.observe(obs, a, r, nobs, terminated)
+        agent.learn_step()
+        obs = nobs
+        step += 1
+    assert step == cfg.data["env_budget"]["deep_sea_size"]
 
 
 def test_factory_run_is_reproducible_and_cell_separated():
