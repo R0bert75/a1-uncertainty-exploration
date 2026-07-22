@@ -75,3 +75,4 @@ Legend: `[ ]` not yet · `[~]` in progress · `[x]` passed (with session + evide
 | Session | Gates checked | Result | Evidence |
 |---|---|---|---|
 | 0 (bootstrap) | — (no science yet) | env + skeleton + CI green | `build_manifest/versions.json`, this repo |
+| infra (pre-freeze) | C1 (agent-level) | DDQN baseline + replay + shared Q-net; stream-derived init/replay/action_noise reproduce a full run bit-for-bit; cross-cell divergence verified | `src/ddqn.py`, `src/networks.py`, `src/replay_buffer.py`, `tests/test_ddqn.py` (34 tests pass) |
