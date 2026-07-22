@@ -1,0 +1,37 @@
+# Example config — the ε-greedy Double DQN baseline on DeepSea (development).
+# Development role: backbone/schedule numbers below are placeholders and MAY be omitted
+# (they would fall back to the labelled DDQNConfig development defaults). A confirmatory
+# config, by contrast, must pin every one explicitly (enforced by src/config.load_config).
+run_id: example_ddqn_deepsea_dev
+role: development            # confirmatory | development | exploratory
+part: A                      # A = DeepSea mechanism, B = MinAtar performance
+method: ddqn_egreedy         # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+env: deep_sea
+master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
+
+# --- structured partial factorial switchboard (Part A) ---
+# The baseline is the reference cell of the switchboard: episodic use-rule, prior off, K=1
+# (a single value head — DDQN is the n_heads=1 use of the shared network).
+use_rule: episodic           # episodic | per_step | ensemble_mean
+prior: off                   # on | off
+K: 1                         # ensemble size (baseline = 1 head)
+arm: episodic|off|K1         # canonical cell_id = "<use_rule>|<prior>|K<K>" (RNG derivation)
+
+# --- three-class parameters ---
+backbone:                    # class 1: backbone nuisance (development placeholders)
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+  hidden_sizes: [64, 64]
+factor_specific:             # class 3: only the varied factor's own params may differ
+  prior_scale: null          # prior is off for the baseline
+  eps_schedule:              # the ε-greedy baseline's own schedule (development placeholder)
+    eps_start: 1.0
+    eps_end: 0.05
+    eps_decay_steps: 3000
+
+# --- budget & seeds ---
+env_budget:
+  deep_sea_size: 8           # small development grid
+  episodes: 500
+seeds: [0, 1, 2]             # explicit; confirmatory DeepSea uses 20/cell

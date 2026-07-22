@@ -5,6 +5,7 @@ role: development            # confirmatory | development | exploratory
 part: A                      # A = DeepSea mechanism, B = MinAtar performance
 method: bdqn                 # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
 env: deep_sea
+master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
 
 # --- structured partial factorial switchboard (Part A); ignored for Part B methods ---
 # use_rule × prior core at K=10, plus a prior × K axis for the episodic rule.
