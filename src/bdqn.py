@@ -28,9 +28,19 @@ the source papers 2026-07-21):
   target-update cadence (a Class-1 backbone parameter).
 * **Head initialization is the diversity prior** — each head is initialized with
   independent random parameters (owned by ``MLPQNetwork.reset_parameters``, drawn head by
-  head from the ``init`` stream). No explicit prior function here; the ``prior=on`` cells
-  (randomized prior functions, Osband et al. 2018) are RP-BDQN, a separate agent — the
-  ``prior_scale`` seam is documented but not implemented in this file.
+  head from the ``init`` stream).
+* **Randomized prior functions (RP-BDQN, the ``prior=on`` cells)** — when ``prior_scale``
+  is set, each head additionally carries a fixed, untrainable random prior ``p_k`` and the
+  value function is ``Q_k = f_k + β·p_k`` with ``β = prior_scale`` (Osband et al. **2018**
+  §3 / Alg. 1). The prior is a second K-head network drawn from the same ``init`` stream
+  immediately after the trainable net (an independent random function), frozen and never
+  optimized, and the SAME prior is shared by the online and target nets. Because it is a
+  detached constant it shifts the predicted Q but contributes no gradient — the 1/K trunk
+  normalization and every gradient path are identical to the plain ensemble. ``prior=off``
+  (``prior_scale=None``) builds no prior and draws nothing extra, so those cells are
+  bit-for-bit identical to plain Bootstrapped DQN. RP-BDQN is thus the SAME agent as the
+  bootstrap ensemble plus one fixed additive term — the gate-C11 code-path-purity claim
+  extends to the prior on/off contrast.
 
 Use rules (how K heads become one action; the Part A ``use_rule`` factor):
 
@@ -87,7 +97,11 @@ class BDQNConfig:
     # Class-2 ensemble parameters (development placeholders; pinned in protocol).
     mask_prob: float = 0.5
     head_loss_agg: str = "grad_norm_1_over_k"
-    # Class-3 ε schedule — only used by use_rule='ensemble_mean' (placeholder linear decay).
+    # Class-3 factor-specific tunables. ``prior_scale`` turns the plain bootstrap ensemble
+    # into RP-BDQN (randomized prior functions, Osband 2018): ``None`` = prior=off (plain
+    # Bootstrapped DQN, no prior); a positive float = prior=on with that β scale. The ε
+    # schedule is only used by use_rule='ensemble_mean' (placeholder linear decay).
+    prior_scale: float | None = None
     eps_start: float = 1.0
     eps_end: float = 0.05
     eps_decay_steps: int = 10_000
@@ -103,6 +117,10 @@ class BDQNConfig:
             raise ValueError(f"K must be >= 1, got {self.K}")
         if not 0.0 < self.mask_prob <= 1.0:
             raise ValueError(f"mask_prob must be in (0, 1], got {self.mask_prob}")
+        if self.prior_scale is not None and self.prior_scale <= 0.0:
+            raise ValueError(
+                f"prior_scale must be a positive float when set (prior=on), got {self.prior_scale}"
+            )
 
 
 class BDQNAgent:
@@ -144,6 +162,27 @@ class BDQNAgent:
         ).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
+
+        # Randomized prior function (RP-BDQN, Osband et al. 2018 §3 / Alg. 1). When
+        # prior_scale is set, every head carries a FIXED, UNTRAINABLE random prior p_k drawn
+        # from a K-head network; the value function is the trainable net plus β·p_k, with the
+        # SAME prior shared by the online and target nets (only the trainable part differs).
+        # The prior network is drawn from the SAME init generator, immediately AFTER the
+        # online net, so it is an independent random function and the RNG sequence for the
+        # trainable net is byte-identical to the plain (prior=off) ensemble. It is frozen
+        # (no grad) and never handed to the optimizer, so the 1/K trunk hook and every
+        # gradient path are unchanged. prior=off (prior_scale is None) builds no prior and
+        # draws nothing extra — those cells are bit-for-bit identical to plain Bootstrapped DQN.
+        self.prior_scale = 0.0 if config.prior_scale is None else float(config.prior_scale)
+        self.prior: MLPQNetwork | None = None
+        if config.prior_scale is not None:
+            self.prior = MLPQNetwork(
+                config.obs_dim, config.n_actions, config.hidden_sizes,
+                n_heads=self.K, generator=init_gen,
+            ).to(self.device)
+            self.prior.eval()
+            for p in self.prior.parameters():
+                p.requires_grad_(False)
 
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=config.lr)
 
@@ -187,11 +226,31 @@ class BDQNAgent:
         frac = min(1.0, step / max(1, cfg.eps_decay_steps))
         return float(cfg.eps_start - (cfg.eps_start - cfg.eps_end) * frac)
 
+    def _prior_term(self, obs: torch.Tensor) -> torch.Tensor | float:
+        """The fixed prior contribution ``β·p(obs)`` (detached), or ``0.0`` when prior=off.
+
+        Shape matches the network output ``[..., K, A]``. Always evaluated under no_grad —
+        the prior is untrainable, so it is a constant added to the trainable value function
+        and never participates in a gradient (Osband et al. 2018 §3, Alg. 1).
+        """
+        if self.prior is None:
+            return 0.0
+        with torch.no_grad():
+            return self.prior_scale * self.prior(obs)
+
+    def _q_online(self, obs: torch.Tensor) -> torch.Tensor:
+        """Trainable online net + prior (grad flows only through the trainable part)."""
+        return self.online(obs) + self._prior_term(obs)
+
+    def _q_target(self, obs: torch.Tensor) -> torch.Tensor:
+        """Target net + the SAME prior (only the trainable target params differ)."""
+        return self.target(obs) + self._prior_term(obs)
+
     @torch.no_grad()
     def _q_all(self, obs: np.ndarray) -> torch.Tensor:
         """Per-head Q-values for a single observation, shape ``[K, n_actions]``."""
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
-        return self.online(obs_t)[0]  # [K, A]
+        return self._q_online(obs_t)[0]  # [K, A]
 
     def greedy_action_of_head(self, obs: np.ndarray, head: int) -> int:
         """argmax_a Qₕₑₐd(obs, a) (ties → lowest action index)."""
@@ -231,9 +290,9 @@ class BDQNAgent:
     def _per_head_td_target(self, batch: Transition) -> torch.Tensor:
         """Per-head Double-DQN target ``[B, K]``: online head selects a', target head evaluates."""
         with torch.no_grad():
-            next_online = self.online(batch.next_obs)              # [B, K, A]
+            next_online = self._q_online(batch.next_obs)           # [B, K, A] (+prior)
             next_actions = torch.argmax(next_online, dim=2, keepdim=True)  # [B, K, 1]
-            next_target = self.target(batch.next_obs)              # [B, K, A]
+            next_target = self._q_target(batch.next_obs)           # [B, K, A] (+same prior)
             next_q = next_target.gather(2, next_actions).squeeze(2)  # [B, K]
             reward = batch.reward.unsqueeze(1)                     # [B, 1]
             done = batch.done.unsqueeze(1)                         # [B, 1]
@@ -267,7 +326,9 @@ class BDQNAgent:
         features = self.online.trunk_features(batch.obs)               # [B, F]
         if features.requires_grad:
             features.register_hook(lambda g: g / self.K)
-        q_all = self.online.heads_forward(features)                    # [B, K, A]
+        # Trainable head outputs + the fixed prior (a detached constant, so it shifts the
+        # predicted Q but contributes no gradient — the 1/K trunk hook is untouched).
+        q_all = self.online.heads_forward(features) + self._prior_term(batch.obs)  # [B, K, A]
         action_idx = batch.action.view(-1, 1, 1).expand(-1, self.K, 1)  # [B, K, 1]
         q_taken = q_all.gather(2, action_idx).squeeze(2)               # [B, K]
 

@@ -215,14 +215,59 @@ def test_unimplemented_method_raises_not_implemented():
         build_agent(cfg, 0)
 
 
-def test_rp_bdqn_prior_on_is_not_yet_implemented():
-    # method 'bdqn' builds the ensemble for prior=off only; prior=on is RP-BDQN.
+def _base_dev_rp_bdqn() -> dict:
+    """A runnable RP-BDQN (prior=on, randomized prior functions) development cell."""
     d = _base_dev_bdqn()
-    d.update(prior="on", arm="episodic|on|K5",
-             factor_specific={"prior_scale": 3.0, "eps_schedule": None})
-    cfg = resolve_config(d)
-    with pytest.raises(ConfigError, match="RP-BDQN"):
-        build_agent(cfg, 0)
+    d.update(
+        run_id="t_rpbdqn_dev",
+        prior="on",
+        arm="episodic|on|K5",
+        factor_specific={"prior_scale": 3.0, "eps_schedule": None},
+    )
+    return d
+
+
+def test_rp_bdqn_prior_on_builds_a_prior_carrying_ensemble():
+    # prior=on is RP-BDQN: the same Bootstrapped-DQN agent plus a fixed random prior.
+    from src.bdqn import BDQNAgent
+
+    cfg = resolve_config(_base_dev_rp_bdqn())
+    agent = build_agent(cfg, 0)
+    assert isinstance(agent, BDQNAgent)
+    assert agent.prior is not None           # the randomized prior network is built
+    assert agent.prior_scale == 3.0          # β = factor_specific.prior_scale
+    assert all(not p.requires_grad for p in agent.prior.parameters())  # frozen
+
+
+def test_rp_bdqn_method_alias_builds_and_requires_prior_on():
+    # The Part-B named method 'rp_bdqn' is the alias for the prior=on ensemble.
+    d = _base_dev_rp_bdqn()
+    d.update(method="rp_bdqn")
+    agent = build_agent(resolve_config(d), 0)
+    assert agent.prior is not None
+    # rp_bdqn with prior=off is contradictory and rejected.
+    d2 = _base_dev_rp_bdqn()
+    d2.update(method="rp_bdqn", prior="off", arm="episodic|off|K5",
+              factor_specific={"prior_scale": None, "eps_schedule": None})
+    with pytest.raises(ConfigError, match="rp_bdqn"):
+        build_agent(resolve_config(d2), 0)
+
+
+def test_prior_on_requires_prior_scale():
+    # prior=on without a Class-3 prior_scale is refused (loader-level for confirmatory,
+    # factory-level here for development).
+    d = _base_dev_rp_bdqn()
+    d.update(factor_specific={"prior_scale": None, "eps_schedule": None})
+    with pytest.raises(ConfigError, match="prior_scale"):
+        build_agent(resolve_config(d), 0)
+
+
+def test_prior_off_must_not_set_prior_scale():
+    # prior=off must not carry a prior_scale — the randomized prior only applies when on.
+    d = _base_dev_bdqn()
+    d.update(factor_specific={"prior_scale": 3.0, "eps_schedule": None})
+    with pytest.raises(ConfigError, match="prior_scale"):
+        build_agent(resolve_config(d), 0)
 
 
 def test_unimplemented_env_raises_not_implemented():

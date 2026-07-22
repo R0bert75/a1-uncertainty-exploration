@@ -51,9 +51,11 @@ VALID_PRIORS = ("on", "off")
 VALID_ENVS = ("deep_sea", "breakout", "asterix", "seaquest", "freeway", "space_invaders")
 
 # What the factories can actually instantiate right now (the rest raise NotImplementedError).
-# ``bdqn`` builds for prior=off (the Bootstrapped-DQN ensemble); prior=on is RP-BDQN
-# (randomized prior functions), not yet implemented — build_agent raises for it.
-IMPLEMENTED_METHODS = ("ddqn_egreedy", "bdqn")
+# ``bdqn`` builds the Bootstrapped-DQN ensemble; prior=off is the plain ensemble and prior=on
+# is RP-BDQN (randomized prior functions, Osband 2018) — the SAME agent plus a fixed additive
+# prior scaled by factor_specific.prior_scale. ``rp_bdqn`` is the Part-B named-method alias for
+# that prior=on ensemble and builds through the same factory.
+IMPLEMENTED_METHODS = ("ddqn_egreedy", "bdqn", "rp_bdqn")
 IMPLEMENTED_ENVS = ("deep_sea",)
 
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
@@ -359,8 +361,8 @@ def build_agent(cfg: RunConfig, seed_index: int):
 
     if cfg.method == "ddqn_egreedy":
         return _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
-    if cfg.method == "bdqn":
-        return _build_bdqn(cfg, obs_dim, n_actions, backbone, seed_index)
+    if cfg.method in ("bdqn", "rp_bdqn"):
+        return _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
     raise NotImplementedError(f"no factory branch for method {cfg.method!r}")  # unreachable
 
 
@@ -391,15 +393,18 @@ def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
     )
 
 
-def _build_bdqn(cfg, obs_dim, n_actions, backbone, seed_index):
+def _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
     from src.bdqn import BDQNAgent, BDQNConfig
 
-    # prior=on is RP-BDQN (randomized prior functions) — a separate agent, not yet built.
-    _require(
-        cfg.prior == "off",
-        f"method 'bdqn' builds the Bootstrapped-DQN ensemble (prior=off); prior={cfg.prior!r} "
-        "is RP-BDQN (randomized prior functions), which is not yet implemented.",
-    )
+    # ``prior`` (a Part-A factor) and the Part-B named method must agree: prior=on is RP-BDQN,
+    # prior=off is the plain Bootstrapped-DQN ensemble. The rp_bdqn method name is the alias
+    # for the prior=on ensemble; the two must not contradict each other in one config.
+    if cfg.method == "rp_bdqn":
+        _require(
+            cfg.prior == "on",
+            "method 'rp_bdqn' is the randomized-prior ensemble (prior=on); "
+            f"got prior={cfg.prior!r}",
+        )
     kwargs: dict[str, Any] = {
         "obs_dim": obs_dim,
         "n_actions": n_actions,
@@ -412,6 +417,20 @@ def _build_bdqn(cfg, obs_dim, n_actions, backbone, seed_index):
     for key in ("mask_prob", "head_loss_agg"):
         if shared.get(key) is not None:
             kwargs[key] = shared[key]
+    # Class-3 randomized-prior scale. prior=on REQUIRES prior_scale (RP-BDQN); prior=off must
+    # leave it unset so the agent builds the plain ensemble (no prior, no extra RNG draw).
+    if cfg.prior == "on":
+        _require(
+            factor.get("prior_scale") is not None,
+            "prior=on (RP-BDQN) requires factor_specific.prior_scale (the Class-3 tunable)",
+        )
+        kwargs["prior_scale"] = factor["prior_scale"]
+    else:
+        _require(
+            factor.get("prior_scale") is None,
+            f"prior={cfg.prior!r} must not set factor_specific.prior_scale "
+            "(the randomized prior only applies when prior: on)",
+        )
     config = BDQNConfig(**kwargs)
     return BDQNAgent(
         config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index

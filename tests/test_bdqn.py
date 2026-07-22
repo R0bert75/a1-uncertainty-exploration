@@ -255,3 +255,110 @@ def test_no_global_torch_rng_dependence():
     torch.manual_seed(9999)
     b = _rollout(_agent())
     assert a == b
+
+
+# --------------------------------------------------------------------------- #
+# Randomized prior functions (RP-BDQN, prior=on) — Osband et al. 2018 §3 / Alg. 1
+# --------------------------------------------------------------------------- #
+def test_config_rejects_nonpositive_prior_scale():
+    with pytest.raises(ValueError, match="prior_scale"):
+        BDQNConfig(obs_dim=OBS_DIM, n_actions=N_ACTIONS, prior_scale=0.0)
+    with pytest.raises(ValueError, match="prior_scale"):
+        BDQNConfig(obs_dim=OBS_DIM, n_actions=N_ACTIONS, prior_scale=-1.0)
+
+
+def test_prior_off_builds_no_prior():
+    ag = _agent()  # prior_scale defaults to None
+    assert ag.prior is None
+    assert ag.prior_scale == 0.0
+
+
+def test_prior_on_builds_a_frozen_prior():
+    ag = _agent(cell_id="episodic|on|K5", prior_scale=3.0)
+    assert ag.prior is not None
+    assert ag.prior_scale == 3.0
+    # The prior is untrainable and NOT handed to the optimizer.
+    assert all(not p.requires_grad for p in ag.prior.parameters())
+    opt_params = {id(p) for group in ag.optimizer.param_groups for p in group["params"]}
+    assert not any(id(p) in opt_params for p in ag.prior.parameters())
+
+
+def test_prior_scale_off_gives_byte_identical_trainable_net():
+    # The prior is drawn AFTER the trainable net from the same init generator, so turning
+    # the prior on must not perturb the trainable net's initialization (gate C1: prior=off
+    # cells stay bit-for-bit identical to the plain ensemble).
+    off = _agent(cell_id="episodic|off|K5")
+    on = _agent(cell_id="episodic|off|K5", prior_scale=3.0)
+    for p_off, p_on in zip(off.online.parameters(), on.online.parameters(), strict=True):
+        assert torch.equal(p_off, p_on)
+
+
+def test_prediction_is_net_plus_beta_prior():
+    ag = _agent(cell_id="episodic|on|K5", prior_scale=2.5)
+    obs = _obs(0)
+    with torch.no_grad():
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
+        net_only = ag.online(obs_t)[0]
+        prior_only = ag.prior(obs_t)[0]
+        q = ag._q_all(obs)
+    assert torch.allclose(q, net_only + 2.5 * prior_only, atol=1e-6)
+
+
+def test_prior_is_shared_by_online_and_target():
+    # The SAME prior is added to both nets — only the trainable params differ (Osband 2018).
+    ag = _agent(cell_id="episodic|on|K5", prior_scale=2.0)
+    obs_t = torch.as_tensor(_obs(1), dtype=torch.float32).unsqueeze(0)
+    with torch.no_grad():
+        # online + prior minus online-net = target + prior minus target-net = the prior term.
+        term_from_online = ag._q_online(obs_t) - ag.online(obs_t)
+        term_from_target = ag._q_target(obs_t) - ag.target(obs_t)
+    assert torch.allclose(term_from_online, term_from_target, atol=1e-6)
+
+
+def test_prior_unchanged_after_training():
+    ag = _agent(cell_id="episodic|on|K5", prior_scale=2.0, gamma=0.0,
+                batch_size=16, min_buffer=16, lr=1e-3)
+    before = torch.cat([p.flatten() for p in ag.prior.parameters()]).clone()
+    det = {s: float(s % 3 == 0) for s in range(OBS_DIM)}
+    for s in range(OBS_DIM):
+        o = _obs(s)
+        for _ in range(8):
+            ag.observe(o, 0, det[s], o, True)
+    for _ in range(400):
+        ag.learn_step()
+    after = torch.cat([p.flatten() for p in ag.prior.parameters()])
+    assert torch.equal(before, after)
+
+
+def test_prior_on_preserves_exact_1_over_k_trunk_gradient():
+    # The prior is a detached constant, so the 1/K trunk-gradient normalization is untouched.
+    ag = _agent(K=4, prior_scale=3.0, cell_id="episodic|on|K4")
+    for i in range(64):
+        o = _obs(i)
+        ag.observe(o, i % N_ACTIONS, 0.5, o, False)
+    idx = ag.buffer.sample_indices(8)
+    raw = ag.buffer.gather(idx)
+    batch = Transition(raw.obs.float(), raw.action, raw.reward, raw.next_obs.float(), raw.done)
+    masks = torch.as_tensor(ag._masks[idx])
+    target = ag._per_head_td_target(batch)
+
+    def grad_sum(hook: bool) -> float:
+        feats = ag.online.trunk_features(batch.obs)
+        feats.retain_grad()
+        if hook:
+            feats.register_hook(lambda g: g / ag.K)
+        q = ag.online.heads_forward(feats) + ag._prior_term(batch.obs)
+        qt = q.gather(2, batch.action.view(-1, 1, 1).expand(-1, ag.K, 1)).squeeze(2)
+        per = torch.nn.functional.smooth_l1_loss(qt, target, reduction="none") * masks
+        loss = (per.sum(0) / masks.sum(0).clamp(min=1.0)).sum()
+        ag.online.zero_grad(set_to_none=True)
+        loss.backward()
+        return feats.grad.abs().sum().item()
+
+    assert abs(grad_sum(True) / grad_sum(False) - 1.0 / ag.K) < 1e-5
+
+
+def test_rp_bdqn_reproducible_from_triple():
+    a = _agent(cell_id="episodic|on|K5", prior_scale=3.0)
+    b = _agent(cell_id="episodic|on|K5", prior_scale=3.0)
+    assert _rollout(a) == _rollout(b)

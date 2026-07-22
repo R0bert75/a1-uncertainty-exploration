@@ -1,0 +1,34 @@
+# Example config — schema only (values are placeholders until Session 1 freeze).
+# RP-BDQN = the Bootstrapped-DQN ensemble with randomized prior functions (prior: on).
+# One config file per (method, env, budget). Seeds are ALWAYS explicit and committed.
+run_id: example_rpbdqn_deepsea_dev
+role: development            # confirmatory | development | exploratory
+part: A                      # A = DeepSea mechanism, B = MinAtar performance
+method: bdqn                 # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+env: deep_sea
+master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
+
+# --- structured partial factorial switchboard (Part A); ignored for Part B methods ---
+# The prior=on arm of the use_rule × prior core: randomized prior functions on top of the ensemble.
+use_rule: episodic           # episodic | per_step | ensemble_mean
+prior: on                    # on | off  (on = RP-BDQN, randomized prior functions)
+K: 10                        # ensemble size (5 | 10 | 20)
+arm: episodic|on|K10         # alias: canonical cell_id = "<use_rule>|<prior>|K<K>" (RNG derivation)
+
+# --- three-class parameters (C13 audits these) ---
+backbone:                    # class 1: backbone nuisance (tuned on DDQN, shared)
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+ensemble_shared:             # class 2: frozen in protocol/preregistration.md (Osband 2016/2018, cited)
+  mask_prob: 0.5             # Ber(0.5) per-transition inclusion (Osband et al. 2018 §3.1, 50-50 buffer)
+  head_loss_agg: grad_norm_1_over_k   # gradients to shared trunk normalized by 1/K (Osband et al. 2016 §6.1/App D.2)
+factor_specific:             # class 3: only the varied factor's own params may differ
+  prior_scale: 3.0           # RP-BDQN prior scale β: Q_k = net_k + β·prior_k (Osband et al. 2018 §3); placeholder value
+  eps_schedule: null         # set only for the baseline / use-rule cells
+
+# --- budget & seeds ---
+env_budget:
+  deep_sea_size: 30
+  episodes: 2000
+seeds: [0, 1, 2, 3, 4]       # explicit; confirmatory DeepSea uses 20/cell
