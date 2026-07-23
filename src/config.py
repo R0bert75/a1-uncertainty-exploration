@@ -55,7 +55,7 @@ VALID_ENVS = ("deep_sea", "breakout", "asterix", "seaquest", "freeway", "space_i
 # is RP-BDQN (randomized prior functions, Osband 2018) — the SAME agent plus a fixed additive
 # prior scaled by factor_specific.prior_scale. ``rp_bdqn`` is the Part-B named-method alias for
 # that prior=on ensemble and builds through the same factory.
-IMPLEMENTED_METHODS = ("ddqn_egreedy", "bdqn", "rp_bdqn")
+IMPLEMENTED_METHODS = ("ddqn_egreedy", "noisynet", "bdqn", "rp_bdqn")
 IMPLEMENTED_ENVS = ("deep_sea",)
 
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
@@ -215,6 +215,8 @@ def _confirmatory_placeholder_violations(data: dict[str, Any]) -> list[str]:
         bad.append("factor_specific.prior_scale (required when prior: on)")
     if data.get("method") == "ddqn_egreedy" and factor.get("eps_schedule") is None:
         bad.append("factor_specific.eps_schedule (required for the ε-greedy baseline)")
+    if data.get("method") == "noisynet" and factor.get("sigma0") is None:
+        bad.append("factor_specific.sigma0 (required for the NoisyNet baseline)")
     if data.get("method") in ENSEMBLE_METHODS:
         shared = data.get("ensemble_shared") or {}
         for key in ("mask_prob", "head_loss_agg"):
@@ -262,7 +264,20 @@ def resolve_config(data: dict[str, Any], *, source_path: str | None = None) -> R
     _require(len(set(seeds)) == len(seeds), f"seeds must be unique, got {seeds!r}")
 
     # --- cell_id (RNG-derivation key) ---
-    if data["part"] == "A":
+    if data["part"] == "A" and data.get("method") == "noisynet":
+        # NoisyNet is a Part-A ride-along baseline (Reviewer Fix 3), not a cell of the
+        # ensemble switchboard: it has no use_rule/prior/K. It must carry its own explicit
+        # arm so its RNG-derivation cell_id is distinct from the DDQN reference cell
+        # (episodic|off|K1) — the streams key on cell_id alone, so a shared arm would
+        # collide the two baselines' seeds.
+        arm = data.get("arm")
+        _require(
+            isinstance(arm, str) and arm and "|" not in arm,
+            "NoisyNet config must set an explicit 'arm' (cell_id) with no switchboard "
+            "'|' separators (e.g. 'noisynet'); it is not an ensemble-factorial cell",
+        )
+        data["cell_id"] = arm
+    elif data["part"] == "A":
         data["cell_id"] = _validate_part_a_factorial(data)
     else:
         # Part B: the factorial switchboard is not the identity; require an explicit arm.
@@ -361,6 +376,8 @@ def build_agent(cfg: RunConfig, seed_index: int):
 
     if cfg.method == "ddqn_egreedy":
         return _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
+    if cfg.method == "noisynet":
+        return _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index)
     if cfg.method in ("bdqn", "rp_bdqn"):
         return _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
     raise NotImplementedError(f"no factory branch for method {cfg.method!r}")  # unreachable
@@ -389,6 +406,21 @@ def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
                 kwargs[key] = eps[key]
     config = DDQNConfig(**kwargs)
     return DDQNAgent(
+        config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index
+    )
+
+
+def _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index):
+    from src.noisynet import NoisyNetAgent, NoisyNetConfig
+
+    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions}
+    _apply_backbone(kwargs, backbone)
+    # sigma0 (the NoisyNet noise-init scale) is this method's Class-3 tunable, analogous to
+    # the ε schedule for the ε-greedy baseline. Absent -> the development placeholder.
+    if factor.get("sigma0") is not None:
+        kwargs["sigma0"] = factor["sigma0"]
+    config = NoisyNetConfig(**kwargs)
+    return NoisyNetAgent(
         config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index
     )
 

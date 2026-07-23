@@ -50,7 +50,12 @@ def _base_dev_ddqn() -> dict:
 # Loading the committed example configs
 # --------------------------------------------------------------------------- #
 def test_example_configs_load_and_validate():
-    for name in ("example_ddqn_deepsea_dev.yaml", "example_bdqn_deepsea_dev.yaml"):
+    for name in (
+        "example_ddqn_deepsea_dev.yaml",
+        "example_noisynet_deepsea_dev.yaml",
+        "example_bdqn_deepsea_dev.yaml",
+        "example_rpbdqn_deepsea_dev.yaml",
+    ):
         cfg = load_config(f"configs/{name}")
         assert isinstance(cfg, RunConfig)
         assert cfg.cell_id == cfg.data["arm"]
@@ -207,12 +212,91 @@ def _base_dev_bdqn() -> dict:
     }
 
 
+def _base_dev_noisynet() -> dict:
+    """A runnable NoisyNet-DQN development cell (Part-A ride-along baseline)."""
+    return {
+        "run_id": "t_noisynet_dev",
+        "role": "development",
+        "part": "A",
+        "method": "noisynet",
+        "env": "deep_sea",
+        "master_seed": 0,
+        # NoisyNet is not a switchboard cell: no use_rule/prior/K; explicit method-named arm.
+        "arm": "noisynet",
+        "backbone": {"lr": 5e-4, "batch_size": 32, "gamma": 0.99, "hidden_sizes": [32, 32]},
+        "factor_specific": {"sigma0": 0.5},
+        "env_budget": {"deep_sea_size": 5, "episodes": 100},
+        "seeds": [0, 1, 2],
+    }
+
+
 def test_unimplemented_method_raises_not_implemented():
     d = _base_dev_ddqn()
-    d.update(method="noisynet")  # recognized in the vocabulary, no factory branch yet
+    d.update(method="qrdqn", role="exploratory")  # recognized, no factory branch yet
     cfg = resolve_config(d)
     with pytest.raises(NotImplementedError):
         build_agent(cfg, 0)
+
+
+def test_noisynet_resolves_with_method_named_cell_id():
+    cfg = resolve_config(_base_dev_noisynet())
+    assert cfg.method == "noisynet"
+    assert cfg.cell_id == "noisynet"        # not an ensemble-switchboard cell
+    assert len(cfg.config_sha256) == 64
+
+
+def test_noisynet_cell_id_is_distinct_from_ddqn_reference():
+    # Streams key on cell_id alone, so the two baselines must not share an arm.
+    noisy = resolve_config(_base_dev_noisynet())
+    ddqn = resolve_config(_base_dev_ddqn())
+    assert noisy.cell_id != ddqn.cell_id     # 'noisynet' vs 'episodic|off|K1'
+
+
+def test_noisynet_rejects_switchboard_style_arm():
+    d = _base_dev_noisynet()
+    d["arm"] = "episodic|off|K1"              # switchboard separators are disallowed here
+    with pytest.raises(ConfigError) as e:
+        resolve_config(d)
+    assert "switchboard" in str(e.value) or "|" in str(e.value)
+
+
+def test_noisynet_builds_agent_from_config():
+    pytest.importorskip("torch")
+    cfg = resolve_config(_base_dev_noisynet())
+    agent = build_agent(cfg, 0)
+    assert type(agent).__name__ == "NoisyNetAgent"
+    assert agent.cfg.sigma0 == 0.5           # the Class-3 tunable is threaded through
+    assert not hasattr(agent, "epsilon")     # exploration is noise, not an ε schedule
+
+
+def test_confirmatory_noisynet_requires_sigma0():
+    d = _base_dev_noisynet()
+    d.update(role="confirmatory", run_id="t_noisynet_conf")
+    d["factor_specific"] = {}                 # sigma0 left as a placeholder -> refused
+    with pytest.raises(ConfigError) as e:
+        resolve_config(d)
+    assert "sigma0" in str(e.value)
+
+
+def test_factories_build_and_step_a_noisynet_run_from_config():
+    pytest.importorskip("torch")
+    cfg = resolve_config(_base_dev_noisynet())
+    env = build_env(cfg, seed_index=0)
+    agent = build_agent(cfg, seed_index=0)
+    assert type(agent).__name__ == "NoisyNetAgent"
+
+    obs, _ = env.reset()
+    obs = obs.ravel().astype("float32")
+    step, terminated = 0, False
+    while not terminated:
+        a = agent.select_action(obs, step=step)
+        nobs, r, terminated, _, _ = env.step(a)
+        nobs = nobs.ravel().astype("float32")
+        agent.observe(obs, a, r, nobs, terminated)
+        agent.learn_step()
+        obs = nobs
+        step += 1
+    assert step == cfg.data["env_budget"]["deep_sea_size"]   # one row per step
 
 
 def _base_dev_rp_bdqn() -> dict:

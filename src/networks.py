@@ -128,3 +128,155 @@ class MLPQNetwork(nn.Module):
         """Map observations to per-head Q-values, shape ``[batch, n_heads, n_actions]``."""
         # trunk then heads; split out so the ensemble can hook the shared features.
         return self.heads_forward(self.trunk_features(obs))
+
+
+def _factorized_noise(size: int, generator: torch.Generator) -> torch.Tensor:
+    """Factorized-Gaussian noise vector ``f(ε)`` with ``f(x)=sgn(x)·sqrt(|x|)``.
+
+    The transformation is Fortunato et al. (2018) §3.2's factorized scheme: a single
+    length-``size`` standard-normal draw is passed through ``f`` and later combined by
+    outer product to build the weight-noise matrix, so a ``[out, in]`` layer needs only
+    ``out + in`` unit-normal samples instead of ``out·in``. Drawn from ``generator`` so the
+    noise is a deterministic function of the stream, never the global torch RNG (gate C1).
+    """
+    eps = torch.randn(size, generator=generator)
+    return eps.sign() * eps.abs().sqrt()
+
+
+class NoisyLinear(nn.Module):
+    """Factorized-Gaussian noisy linear layer (Fortunato et al. 2018, the DQN variant).
+
+    Replaces ``y = Wx + b`` with ``y = (μ_w + σ_w ⊙ ε_w)x + (μ_b + σ_b ⊙ ε_b)`` where the
+    ``μ`` and ``σ`` are learnable and the ``ε`` are fixed samples resampled between forward
+    passes. The learnable ``σ`` let the network *learn* how much noise (exploration) to
+    inject per weight, and anneal it away where the value estimate has become confident —
+    this is what replaces the ε-greedy schedule.
+
+    Initialization (Fortunato §3.2, factorized case): ``μ ~ U(-1/√p, 1/√p)`` and
+    ``σ = σ₀/√p`` with ``p = fan_in``; ``σ₀`` is passed in (development placeholder 0.5, the
+    paper's factorized default — never frozen in source). All ``μ``/``σ`` draws come from the
+    ``init``-stream ``generator``; the per-step ε samples come from a *separate* operational
+    generator handed to :meth:`reset_noise`, so parameter init and exploration noise never
+    share a draw sequence.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        *,
+        sigma0: float = 0.5,
+        generator: torch.Generator | None = None,
+    ) -> None:
+        super().__init__()
+        if in_features <= 0 or out_features <= 0:
+            raise ValueError(
+                f"in/out features must be positive, got {in_features}, {out_features}"
+            )
+        self.in_features = int(in_features)
+        self.out_features = int(out_features)
+        self.sigma0 = float(sigma0)
+
+        self.weight_mu = nn.Parameter(torch.empty(self.out_features, self.in_features))
+        self.weight_sigma = nn.Parameter(torch.empty(self.out_features, self.in_features))
+        self.bias_mu = nn.Parameter(torch.empty(self.out_features))
+        self.bias_sigma = nn.Parameter(torch.empty(self.out_features))
+        # Noise buffers (not parameters — never optimized). Filled by reset_noise().
+        self.register_buffer("weight_eps", torch.zeros(self.out_features, self.in_features))
+        self.register_buffer("bias_eps", torch.zeros(self.out_features))
+
+        if generator is not None:
+            self.reset_parameters(generator)
+
+    def reset_parameters(self, generator: torch.Generator) -> None:
+        """Initialize μ/σ from the ``init``-stream ``generator`` (Fortunato §3.2, factorized)."""
+        bound = 1.0 / math.sqrt(self.in_features)
+        sigma_init = self.sigma0 / math.sqrt(self.in_features)
+        with torch.no_grad():
+            self.weight_mu.uniform_(-bound, bound, generator=generator)
+            self.bias_mu.uniform_(-bound, bound, generator=generator)
+            self.weight_sigma.fill_(sigma_init)
+            self.bias_sigma.fill_(sigma_init)
+
+    def reset_noise(self, generator: torch.Generator) -> None:
+        """Resample the factorized ε buffers from an operational ``generator``.
+
+        Draw order is fixed (input factor then output factor) so the noise is a
+        deterministic function of the operational stream's state.
+        """
+        eps_in = _factorized_noise(self.in_features, generator)
+        eps_out = _factorized_noise(self.out_features, generator)
+        with torch.no_grad():
+            self.weight_eps.copy_(torch.outer(eps_out, eps_in))
+            self.bias_eps.copy_(eps_out)
+
+    def forward(self, x: torch.Tensor, *, noisy: bool = True) -> torch.Tensor:
+        """Linear map. ``noisy=True`` uses μ+σ⊙ε; ``noisy=False`` uses μ only (mean net)."""
+        if noisy:
+            weight = self.weight_mu + self.weight_sigma * self.weight_eps
+            bias = self.bias_mu + self.bias_sigma * self.bias_eps
+        else:
+            weight, bias = self.weight_mu, self.bias_mu
+        return nn.functional.linear(x, weight, bias)
+
+
+class NoisyMLPQNetwork(nn.Module):
+    """Single-head MLP Q-network whose linear layers are :class:`NoisyLinear` (NoisyNet-DQN).
+
+    Structurally the ``n_heads=1`` Double-DQN backbone — same trunk-then-head shape and the
+    same stream-derived, no-global-RNG initialization contract as :class:`MLPQNetwork` — but
+    every ``nn.Linear`` is a :class:`NoisyLinear`. Exploration comes from the learnable
+    parameter noise (Fortunato et al. 2018) instead of an ε-greedy schedule, so there is no
+    head axis and no ε. ``hidden_sizes`` (Class-1 width) and ``sigma0`` are passed in.
+
+    Forward returns ``[batch, n_actions]``. :meth:`reset_noise` resamples every layer's ε from
+    the operational generator; a forward with ``noisy=False`` gives the mean (μ-only) network.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int],
+        *,
+        sigma0: float = 0.5,
+        generator: torch.Generator | None = None,
+    ) -> None:
+        super().__init__()
+        if obs_dim <= 0 or n_actions <= 0:
+            raise ValueError(f"obs_dim and n_actions must be positive, got {obs_dim}, {n_actions}")
+        self.obs_dim = int(obs_dim)
+        self.n_actions = int(n_actions)
+        self.sigma0 = float(sigma0)
+
+        self.layers = nn.ModuleList()
+        self.activations: list[bool] = []  # True where a ReLU follows the layer
+        in_dim = self.obs_dim
+        for width in hidden_sizes:
+            self.layers.append(NoisyLinear(in_dim, int(width), sigma0=self.sigma0))
+            self.activations.append(True)
+            in_dim = int(width)
+        self.layers.append(NoisyLinear(in_dim, self.n_actions, sigma0=self.sigma0))
+        self.activations.append(False)
+
+        if generator is not None:
+            self.reset_parameters(generator)
+
+    def reset_parameters(self, generator: torch.Generator) -> None:
+        """Re-initialize every noisy layer's μ/σ from ``generator`` (the ``init`` stream)."""
+        for layer in self.layers:
+            layer.reset_parameters(generator)
+
+    def reset_noise(self, generator: torch.Generator) -> None:
+        """Resample the factorized noise of every layer (in order) from ``generator``."""
+        for layer in self.layers:
+            layer.reset_noise(generator)
+
+    def forward(self, obs: torch.Tensor, *, noisy: bool = True) -> torch.Tensor:
+        """Q-values ``[batch, n_actions]``. ``noisy=False`` evaluates the mean (μ-only) net."""
+        x = obs
+        for layer, has_relu in zip(self.layers, self.activations, strict=True):
+            x = layer(x, noisy=noisy)
+            if has_relu:
+                x = nn.functional.relu(x)
+        return x

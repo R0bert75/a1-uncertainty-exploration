@@ -1,0 +1,35 @@
+# Example config — NoisyNet-DQN baseline on DeepSea (development).
+# NoisyNet (Fortunato et al. 2018) is baseline method (2) and, per Reviewer Fix 3, rides
+# along with DDQN in the DeepSea confirmatory sweep. It replaces the ε-greedy schedule with
+# learnable Gaussian parameter noise, so it has NO use_rule/prior/K switchboard fields; it
+# carries its own method-named arm ('noisynet') as the RNG-derivation cell_id, kept distinct
+# from the DDQN reference cell (episodic|off|K1).
+# Development role: backbone/schedule numbers below are placeholders and MAY be omitted
+# (they fall back to the labelled NoisyNetConfig development defaults). A confirmatory config
+# must pin every one explicitly, including factor_specific.sigma0 (enforced at load time).
+run_id: example_noisynet_deepsea_dev
+role: development            # confirmatory | development | exploratory
+part: A                      # A = DeepSea mechanism, B = MinAtar performance
+method: noisynet             # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+env: deep_sea
+master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
+
+# --- RNG-derivation cell id ---
+# NoisyNet is not a cell of the ensemble factorial: no use_rule/prior/K. Its cell_id is the
+# method name, with no '|' switchboard separators.
+arm: noisynet                # canonical cell_id (RNG derivation key)
+
+# --- three-class parameters ---
+backbone:                    # class 1: backbone nuisance (development placeholders)
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+  hidden_sizes: [64, 64]
+factor_specific:             # class 3: NoisyNet's own tunable is the noise-init scale
+  sigma0: 0.5                # Fortunato factorized default (development placeholder)
+
+# --- budget & seeds ---
+env_budget:
+  deep_sea_size: 8           # small development grid
+  episodes: 500
+seeds: [0, 1, 2]             # explicit; confirmatory DeepSea ride-along uses 10/size
