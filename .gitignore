@@ -30,3 +30,7 @@ figures/*
 *.pt
 *.ckpt
 checkpoints/
+
+# dev_battery/ is a one-off, smoke-scale exploratory run (not pre-registered
+# protocol). Its data + figure are archived as artifacts, not committed here.
+dev_battery/
