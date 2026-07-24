@@ -183,17 +183,29 @@ rather than a confirmatory arm, and confines the confirmatory estimator-quality 
 randomized-value estimates on DeepSea. Its rigor apparatus (permutation nulls, bootstrap
 refutation, FDR) is a methodological sibling to A1's own confirmatory-integrity design.
 
-### 3.4 BDQN-scaling preprint (prior × K on DeepSea; posterior collapse / diversity) — **not located**
+### 3.4 BDQN-scaling preprint (prior × K on DeepSea; posterior collapse / diversity) — **not located; closed as a documented null**
 
 The Session-2 brief flagged, as the top neighbor tier, a preprint studying `prior × K` on
 DeepSea with posterior-collapse and ensemble-diversity findings, review status to be verified.
-**Under this search protocol it was not located** — it was never pinned to a concrete
-arXiv/DOI identifier in any prior session, and the targeted queries in §A.4 returned no
-matching record. This is recorded as a **null result, not an absence claim**: if this preprint
-is a genuine near-twin of A1's `prior × K` sub-design, it would be a **severity-3 threat to
-C-i and C-ii on the K axis specifically** and must be located and characterized before the
-final freeze. **Action carried to the external-review window / Session-3 pilot freeze:** ask
-the reviewer to name it if they know it, and re-run the neighbor search closer to freeze.
+It was never pinned to a concrete arXiv/DOI identifier in any prior session, and the targeted
+queries in §A.4 returned no matching record. **The pre-freeze re-run required by §A.8 has now
+been completed (2026-07-24) across both databases (§A.4a) and it too returned no near-twin.**
+Concretely: six broadened arXiv `cs.LG` queries returned only Osband 2018 itself and unrelated
+randomized-prior uses (operator networks, Bayesian optimization); OpenAlex concept queries plus
+a **full traversal of the citation graph of Osband 2018 (106–116 citing works)** intersected
+with the `prior × K` / ensemble-size / diversity / posterior-collapse / DeepSea theme surfaced
+no study matching the described near-twin.
+
+This is recorded as a **null result under the stated search protocol, not an absence claim**:
+the searches bound our retrieval, not the literature. **Threat status: DOWNGRADED.** Had this
+preprint been a genuine near-twin of A1's `prior × K` sub-design it would have been a
+severity-3 threat to C-i and C-ii on the K axis; with two independent databases and the direct
+citation graph of the founding paper all negative, the residual risk is that a **human reviewer
+recognizes an unindexed or differently-titled preprint**. **This item is therefore closed for
+the freeze and carried only as a standing ask to the external reviewer** ("if you know a
+`prior × K`-on-DeepSea diversity/posterior-collapse preprint, please name it"). No search can
+prove absence; if the reviewer names it, this becomes a pre-confirmatory amendment (new tag +
+mirror), not a freeze blocker.
 
 ---
 
@@ -226,8 +238,8 @@ matched-budget fair-baseline methodology (Ceron, Taïga) and the MinAtar low-bud
 (Young; Clements). It positions the newer neighbors as complementary: EVE ablates within one
 epistemic-value method (A1 crosses factors across methods); Priors Matter interrogates the
 Bayesian assumptions A1's `prior` axis measures behaviourally; the July-2026 distributional
-audit confirms QR-DQN's exploratory status. One `prior × K` neighbor preprint remains to be
-located before the final freeze.
+audit confirms QR-DQN's exploratory status. The one `prior × K` neighbor preprint flagged in
+Session 2 was re-searched at freeze time (§3.4, §A.4a) and closed as a documented null.
 
 ---
 
@@ -244,8 +256,10 @@ re-mine that produced the audit, and the Session-2 neighbor verification.*
 - **Claim-level re-mine (the audit):** produced `novelty_deep_dive.md` /
   `novelty_threat_matrix.csv`. Databases: arXiv + OpenAlex, plus a forward/backward
   **citation walk** around ten anchor papers.
-- **Newer-neighbor verification:** **2026-07-23** (this session). Database: arXiv API
+- **Newer-neighbor verification:** **2026-07-23**. Database: arXiv API
   (title/abstract queries); OpenAlex attempted for venue/review status.
+- **Pre-freeze BDQN-scaling re-run:** **2026-07-24** (§A.4a). Databases: arXiv API +
+  OpenAlex (`api.openalex.org`, concept queries and the Osband-2018 citation graph).
 
 ## A.2 Anchor papers (citation-walk seeds)
 
@@ -278,16 +292,47 @@ papers rather than a hidden twin of A1.
 | BDQN-scaling (attempt 4) | `abs:"Bootstrapped DQN" AND abs:"posterior collapse"` | 0 hits |
 | BDQN-scaling (attempt 5) | `ti:"deep exploration" AND abs:"ensemble size"` | 0 hits |
 
+## A.4a Pre-freeze re-run of the BDQN-scaling neighbor search (2026-07-24)
+
+Required by §A.8 ("re-run closer to the final freeze"). Two databases; both negative.
+
+**arXiv API** (`cs.LG`, relevance sort, up to 15 hits each) — six broadened queries:
+
+| Query string | Result |
+|---|---|
+| `abs:"randomized prior" AND abs:"ensemble size"` | 1 hit — operator-network UQ (not RL exploration) |
+| `abs:"bootstrapped DQN" AND abs:diversity AND abs:exploration` | 1 hit — *Mixture of Step Returns in Bootstrapped DQN* (not prior × K) |
+| `abs:"posterior collapse" AND abs:"deep reinforcement learning"` | 1 hit — Wasserstein auto-encoded MDPs (unrelated) |
+| `abs:"ensemble size" AND abs:"deep exploration"` | 0 hits |
+| `abs:"randomized prior functions" AND abs:diversity` | 0 hits |
+| `ti:"randomized prior" AND abs:ensemble` | 3 hits — Osband 2018 itself + 2 non-RL randomized-prior uses |
+
+**OpenAlex** (`api.openalex.org`, relevance sort, `from_publication_date:2019`) — concept
+queries **and** a citation-graph traversal of the founding paper:
+
+| Query | Result |
+|---|---|
+| `"randomized prior" ensemble size DeepSea posterior collapse` | 2 works, neither a match |
+| `bootstrapped DQN ensemble size diversity deep exploration DeepSea` | 3 works, none a match |
+| Works **citing Osband 2018** (`cites:W2807588596`; 106–116 citing works total) ∩ `ensemble size diversity posterior DeepSea prior` | **0** matching works |
+| Works citing Osband 2018 ∩ `deep sea exploration ensemble` (looser) | 5 works, all unrelated exploration papers (EVE-line, indexed value functions, network-monitoring) |
+
+**Conclusion:** no `prior × K`-on-DeepSea posterior-collapse/diversity near-twin located in
+either database or in the direct citation graph of Osband 2018. §3.4 is closed as a documented
+null under this protocol; the only residual is reviewer recognition of an unindexed preprint.
+
 ## A.5 Load-bearing null queries (the audit)
 
 - Title/abstract search for a paper jointly about **bootstrapped *and* NoisyNet** exploration
   → **0 matches**.
 - Search for an exploration-method comparison (bootstrap / noisy / ensemble) **on MinAtar**
   → **0 matches**.
-- The **BDQN-scaling `prior × K`** preprint (A.4) → **not located under this protocol**.
+- The **BDQN-scaling `prior × K`** preprint (A.4 / A.4a) → **not located under this protocol**,
+  across two databases and the citation graph of Osband 2018; closed as a documented null (§3.4).
 
 Null queries support C-i and C-v (no bootstrapped-vs-noisy comparison; no MinAtar exploration
-cross-method study) and flag one open verification (A.4 / §3.4).
+cross-method study). The one previously-open verification (A.4 / §3.4) is now resolved as a
+null by the pre-freeze re-run (A.4a).
 
 ## A.6 Screening rules
 
@@ -312,10 +357,12 @@ preprint status is the conservative assumption.
 
 Null results cannot prove absence; they bound the search protocol, not the literature. arXiv
 API relevance ranking and OpenAlex fuzzy title-matching both introduce recall gaps — the
-BDQN-scaling preprint (§3.4) is the concrete instance and is carried as an open item to the
-external-review window and the Session-3 pilot freeze. Venue/review status for the two 2025–26
-preprints is unverified (A.7). This appendix should be re-run closer to the final freeze so the
-neighbor tier reflects the state of the literature at registration.
+BDQN-scaling preprint (§3.4) was the concrete instance. The pre-freeze re-run this note called
+for has now been performed (§A.4a, 2026-07-24) across arXiv, OpenAlex, and the Osband-2018
+citation graph, all negative; §3.4 is accordingly closed as a documented null, with the sole
+residual being reviewer recognition of an unindexed preprint. Venue/review status for the two
+2025–26 preprints is unverified (A.7). Should the external reviewer name a genuine near-twin,
+it is handled as a pre-confirmatory amendment (new tag + mirror), not a freeze blocker.
 
 ---
 
