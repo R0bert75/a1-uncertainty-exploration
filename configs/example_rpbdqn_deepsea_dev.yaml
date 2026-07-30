@@ -4,7 +4,7 @@
 run_id: example_rpbdqn_deepsea_dev
 role: development            # confirmatory | development | exploratory
 part: A                      # A = DeepSea mechanism, B = MinAtar performance
-method: bdqn                 # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+method: rp_bdqn              # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
 env: deep_sea
 master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
 

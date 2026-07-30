@@ -397,8 +397,13 @@ class CSVLogger:
         axis: Literal["online", "frozen_policy"] = "online",
         **extra: Any,
     ) -> None:
-        """Append one metric row. ``extra`` keys become extra columns (only in the header
-        of a fresh file; for an existing file they must already be present).
+        """Append one metric row.
+
+        The header is **frozen** to :data:`BASE_FIELDS` (gate C2): ``fieldnames`` is fixed at
+        construction, so any ``extra`` key raises ``ValueError`` from ``csv.DictWriter``. The
+        ``**extra`` signature is retained only so a caller's mistake fails loudly rather than
+        silently widening the schema. To record an additional quantity, emit it as its own row
+        under a new ``metric`` name — that is what the frozen schema is designed for.
 
         ``checkpoint`` is the checkpoint index the metric was measured at; ``is_t0`` marks
         the t0 checkpoint (spec §7 t0 rule); ``axis`` selects the evaluation axis

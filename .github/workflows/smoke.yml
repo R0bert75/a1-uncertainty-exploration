@@ -41,5 +41,8 @@ jobs:
           python analysis/make_figures.py --logs logs --out figures
           test -n "$(ls figures/*.png 2>/dev/null)" || (echo 'no figures produced' && exit 1)
 
+      - name: Config schema check (spec §4)
+        run: PYTHONPATH=. python audits/config_schema_check.py --configs configs
+
       - name: C13 audit
         run: python audits/c13_audit.py --configs logs --out audits/c13

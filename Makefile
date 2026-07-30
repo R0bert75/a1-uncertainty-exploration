@@ -33,10 +33,13 @@ figures: $(LOGS)/dummy_smoke.csv  ## Rebuild every figure from logs/*.csv ALONE
 $(LOGS)/dummy_smoke.csv:
 	$(PYTHON) analysis/make_dummy_logs.py --out $@
 
+schema:  ## Assert every committed config resolves under the frozen schema (spec §4)
+	PYTHONPATH=. python audits/config_schema_check.py --configs configs
+
 audit:  ## Run the C13 configuration-identity audit
 	$(PYTHON) audits/c13_audit.py --configs $(LOGS) --out audits/c13
 
-smoke: test figures audit  ## Full local smoke check (tests + figures + audit)
+smoke: test schema figures audit  ## Full local smoke check (tests + schema + figures + audit)
 	@echo "smoke OK"
 
 clean:  ## Remove generated figures (logs are the source of truth; kept)
