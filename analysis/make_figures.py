@@ -48,8 +48,15 @@ def load_logs(logs_dir: Path) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def _plot_group(df: pd.DataFrame, part: str, env: str, metric: str, out_dir: Path) -> Path:
+def _plot_group(
+    df: pd.DataFrame, part: str, env: str, metric: str, axis: str, out_dir: Path
+) -> Path:
     """Placeholder figure: mean±band over seeds per method vs. step.
+
+    One panel per ``(part, env, metric, axis)``. The axis is part of the grouping key because
+    the two frozen reporting axes (spec §5: ``online`` primary, ``frozen_policy`` secondary)
+    share the ``episode_return`` metric name — grouping without it would overplot two
+    different estimands on one panel.
 
     Replaced in later sessions by the real §1.1 estimand and battery figures.
     """
@@ -64,12 +71,12 @@ def _plot_group(df: pd.DataFrame, part: str, env: str, metric: str, out_dir: Pat
     ax.set_xlabel("environment step")
     ax.set_ylabel(metric)
     roles = ",".join(sorted(df["role"].unique()))
-    ax.set_title(f"[PLACEHOLDER] part {part} · {env} · {metric}  (role: {roles})")
+    ax.set_title(f"[PLACEHOLDER] part {part} · {env} · {metric} · {axis}  (role: {roles})")
     ax.legend(fontsize=8, title="method")
     fig.tight_layout()
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    safe = f"part{part}_{env}_{metric}".replace("/", "-")
+    safe = f"part{part}_{env}_{metric}_{axis}".replace("/", "-")
     path = out_dir / f"{safe}.png"
     fig.savefig(path)
     plt.close(fig)
@@ -84,8 +91,8 @@ def main(argv: list[str] | None = None) -> int:
 
     df = load_logs(args.logs)
     written = []
-    for (part, env, metric), g in df.groupby(["part", "env", "metric"]):
-        written.append(_plot_group(g, str(part), str(env), str(metric), args.out))
+    for (part, env, metric, axis), g in df.groupby(["part", "env", "metric", "axis"]):
+        written.append(_plot_group(g, str(part), str(env), str(metric), str(axis), args.out))
 
     print(f"rebuilt {len(written)} figure(s) from {df['__source__'].nunique()} CSV(s):")
     for p in written:

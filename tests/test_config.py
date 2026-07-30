@@ -14,6 +14,8 @@ import copy
 import pytest
 
 from src.config import (
+    IMPLEMENTED_ENVS,
+    VALID_ENVS,
     ConfigError,
     RunConfig,
     build_agent,
@@ -55,6 +57,10 @@ def test_example_configs_load_and_validate():
         "example_noisynet_deepsea_dev.yaml",
         "example_bdqn_deepsea_dev.yaml",
         "example_rpbdqn_deepsea_dev.yaml",
+        "example_ddqn_breakout_dev.yaml",
+        "example_noisynet_breakout_dev.yaml",
+        "example_bdqn_breakout_dev.yaml",
+        "example_rpbdqn_breakout_dev.yaml",
     ):
         cfg = load_config(f"configs/{name}")
         assert isinstance(cfg, RunConfig)
@@ -354,12 +360,17 @@ def test_prior_off_must_not_set_prior_scale():
         build_agent(resolve_config(d), 0)
 
 
-def test_unimplemented_env_raises_not_implemented():
-    d = _base_dev_ddqn()
-    d.update(env="breakout", part="B")
-    cfg = resolve_config(d)
-    with pytest.raises(NotImplementedError):
-        build_env(cfg, 0)
+def test_every_recognized_env_now_builds():
+    """All six envs are implemented as of the MinAtar wiring.
+
+    This slot previously asserted that ``breakout`` raises ``NotImplementedError``; that
+    behavior was removed when Part B was wired, so the test now pins the replacement
+    invariant — no recognized env is left unbuildable. Method-level coverage of the
+    remaining unimplemented method (``qrdqn``) lives in
+    ``test_unimplemented_method_raises_not_implemented`` above; the Part-B factory
+    behavior is covered in ``tests/test_config_minatar.py``.
+    """
+    assert set(VALID_ENVS) == set(IMPLEMENTED_ENVS)
 
 
 # --------------------------------------------------------------------------- #

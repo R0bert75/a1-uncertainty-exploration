@@ -41,7 +41,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.networks import NoisyMLPQNetwork
+from src.networks import build_noisy_q_network
 from src.replay_buffer import ReplayBuffer, Transition
 from src.utils import conventions
 
@@ -62,6 +62,9 @@ class NoisyNetConfig:
 
     obs_dim: int
     n_actions: int
+    #: Channel-first ``(C, H, W)`` shape for the conv (MinAtar) backbone; ``None`` = flat/MLP
+    #: DeepSea path (byte-identical to before this field existed). See ``DDQNConfig.obs_shape``.
+    obs_shape: tuple[int, ...] | None = None
     hidden_sizes: tuple[int, ...] = (64, 64)
     lr: float = 5e-4
     gamma: float = 0.99
@@ -106,15 +109,20 @@ class NoisyNetAgent:
         init_gen = conventions.derive_torch_generator(
             self.master_seed, self.cell_id, "init", self.seed_index
         )
-        self.online = NoisyMLPQNetwork(
+        self.online = build_noisy_q_network(
             config.obs_dim,
             config.n_actions,
             config.hidden_sizes,
+            obs_shape=config.obs_shape,
             sigma0=config.sigma0,
             generator=init_gen,
         ).to(self.device)
-        self.target = NoisyMLPQNetwork(
-            config.obs_dim, config.n_actions, config.hidden_sizes, sigma0=config.sigma0
+        self.target = build_noisy_q_network(
+            config.obs_dim,
+            config.n_actions,
+            config.hidden_sizes,
+            obs_shape=config.obs_shape,
+            sigma0=config.sigma0,
         ).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
@@ -142,6 +150,18 @@ class NoisyNetAgent:
     # Action selection — exploration IS the parameter noise (no ε).
     # ------------------------------------------------------------------ #
     @torch.no_grad()
+    def _flat_obs(self, obs: np.ndarray) -> np.ndarray:
+        """Flatten a conv observation for replay storage; identity on the flat path."""
+        if self.cfg.obs_shape is None:
+            return obs
+        return np.asarray(obs, dtype=np.float32).reshape(-1)
+
+    def _net_obs(self, batch_obs: torch.Tensor) -> torch.Tensor:
+        """Restore ``[B, C, H, W]`` from flat replay rows; identity on the flat path."""
+        if self.cfg.obs_shape is None:
+            return batch_obs
+        return batch_obs.view(batch_obs.shape[0], *self.cfg.obs_shape)
+
     def greedy_action(self, obs: np.ndarray) -> int:
         """argmax_a Q(obs, a) under the current noisy online net (ties by lowest index)."""
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
@@ -165,14 +185,15 @@ class NoisyNetAgent:
         done: bool,
     ) -> None:
         """Store a transition in replay."""
-        self.buffer.add(obs, action, reward, next_obs, done)
+        self.buffer.add(self._flat_obs(obs), action, reward, self._flat_obs(next_obs), done)
 
     def _td_target(self, batch: Transition) -> torch.Tensor:
         """Double-DQN target under the current noise: online selects a', target evaluates it."""
         with torch.no_grad():
-            next_online = self.online(batch.next_obs)                     # [B, A] noisy
+            next_obs = self._net_obs(batch.next_obs)
+            next_online = self.online(next_obs)                           # [B, A] noisy
             next_actions = torch.argmax(next_online, dim=1, keepdim=True)  # [B, 1]
-            next_target = self.target(batch.next_obs)                     # [B, A] noisy
+            next_target = self.target(next_obs)                           # [B, A] noisy
             next_q = next_target.gather(1, next_actions).squeeze(1)        # [B]
             return batch.reward + self.cfg.gamma * (1.0 - batch.done) * next_q
 
@@ -197,7 +218,7 @@ class NoisyNetAgent:
         self.target.reset_noise(self._noise_gen)
 
         target = self._td_target(batch)
-        q = self.online(batch.obs)                                   # [B, A] noisy
+        q = self.online(self._net_obs(batch.obs))                    # [B, A] noisy
         q_taken = q.gather(1, batch.action.unsqueeze(1)).squeeze(1)  # [B]
         loss = nn.functional.smooth_l1_loss(q_taken, target)         # Huber (DQN standard)
 

@@ -65,7 +65,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.networks import MLPQNetwork
+from src.networks import build_q_network
 from src.replay_buffer import ReplayBuffer, Transition
 from src.utils import conventions
 
@@ -85,6 +85,9 @@ class BDQNConfig:
 
     obs_dim: int
     n_actions: int
+    #: Channel-first ``(C, H, W)`` shape for the conv (MinAtar) backbone; ``None`` = flat/MLP
+    #: DeepSea path (byte-identical to before this field existed). See ``DDQNConfig.obs_shape``.
+    obs_shape: tuple[int, ...] | None = None
     K: int = 10
     use_rule: str = "episodic"
     hidden_sizes: tuple[int, ...] = (64, 64)
@@ -153,12 +156,13 @@ class BDQNAgent:
         init_gen = conventions.derive_torch_generator(
             self.master_seed, self.cell_id, "init", self.seed_index
         )
-        self.online = MLPQNetwork(
+        self.online = build_q_network(
             config.obs_dim, config.n_actions, config.hidden_sizes,
-            n_heads=self.K, generator=init_gen,
+            obs_shape=config.obs_shape, n_heads=self.K, generator=init_gen,
         ).to(self.device)
-        self.target = MLPQNetwork(
-            config.obs_dim, config.n_actions, config.hidden_sizes, n_heads=self.K,
+        self.target = build_q_network(
+            config.obs_dim, config.n_actions, config.hidden_sizes,
+            obs_shape=config.obs_shape, n_heads=self.K,
         ).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
@@ -174,11 +178,11 @@ class BDQNAgent:
         # gradient path are unchanged. prior=off (prior_scale is None) builds no prior and
         # draws nothing extra — those cells are bit-for-bit identical to plain Bootstrapped DQN.
         self.prior_scale = 0.0 if config.prior_scale is None else float(config.prior_scale)
-        self.prior: MLPQNetwork | None = None
+        self.prior: torch.nn.Module | None = None
         if config.prior_scale is not None:
-            self.prior = MLPQNetwork(
+            self.prior = build_q_network(
                 config.obs_dim, config.n_actions, config.hidden_sizes,
-                n_heads=self.K, generator=init_gen,
+                obs_shape=config.obs_shape, n_heads=self.K, generator=init_gen,
             ).to(self.device)
             self.prior.eval()
             for p in self.prior.parameters():
@@ -238,6 +242,18 @@ class BDQNAgent:
         with torch.no_grad():
             return self.prior_scale * self.prior(obs)
 
+    def _flat_obs(self, obs: np.ndarray) -> np.ndarray:
+        """Flatten a conv observation for replay storage; identity on the flat path."""
+        if self.cfg.obs_shape is None:
+            return obs
+        return np.asarray(obs, dtype=np.float32).reshape(-1)
+
+    def _net_obs(self, batch_obs: torch.Tensor) -> torch.Tensor:
+        """Restore ``[B, C, H, W]`` from flat replay rows; identity on the flat path."""
+        if self.cfg.obs_shape is None:
+            return batch_obs
+        return batch_obs.view(batch_obs.shape[0], *self.cfg.obs_shape)
+
     def _q_online(self, obs: torch.Tensor) -> torch.Tensor:
         """Trainable online net + prior (grad flows only through the trainable part)."""
         return self.online(obs) + self._prior_term(obs)
@@ -256,6 +272,21 @@ class BDQNAgent:
         """argmax_a Qₕₑₐd(obs, a) (ties → lowest action index)."""
         q = self._q_all(obs)[head]  # [A]
         return int(torch.argmax(q).item())
+
+    @torch.no_grad()
+    def mean_action(self, obs: np.ndarray) -> int:
+        """Greedy action w.r.t. the **ensemble-mean** Q — the frozen-policy extraction.
+
+        The pre-registered standardized evaluation axis (spec §5 "two reporting axes") extracts
+        a deterministic policy per method: DDQN → greedy(Q); NoisyNet → noise-off greedy
+        (``NoisyNetAgent.mean_action``); **bootstrapped cells → greedy w.r.t. ensemble-mean Q**.
+        This is that extraction, and it is deliberately *not* the same as
+        ``use_rule='ensemble_mean'`` acting: no ε is applied here, because the frozen-policy
+        axis evaluates a deterministic policy. It draws no randomness from any stream, so
+        measuring it cannot perturb a run (gate C1).
+        """
+        q_mean = self._q_all(obs).mean(dim=0)  # [A]
+        return int(torch.argmax(q_mean).item())
 
     def select_action(self, obs: np.ndarray, step: int) -> int:
         """Choose an action under the configured use-rule.
@@ -282,7 +313,7 @@ class BDQNAgent:
         self, obs: np.ndarray, action: int, reward: float, next_obs: np.ndarray, done: bool
     ) -> None:
         """Store a transition and draw its fixed per-head bootstrap mask (Ber(mask_prob))."""
-        self.buffer.add(obs, action, reward, next_obs, done)
+        self.buffer.add(self._flat_obs(obs), action, reward, self._flat_obs(next_obs), done)
         mask = (self._mask_rng.random(self.K) < self.cfg.mask_prob).astype(np.float32)
         self._masks[self._mask_pos] = mask
         self._mask_pos = (self._mask_pos + 1) % self.cfg.buffer_capacity
@@ -290,9 +321,10 @@ class BDQNAgent:
     def _per_head_td_target(self, batch: Transition) -> torch.Tensor:
         """Per-head Double-DQN target ``[B, K]``: online head selects a', target head evaluates."""
         with torch.no_grad():
-            next_online = self._q_online(batch.next_obs)           # [B, K, A] (+prior)
+            next_net_obs = self._net_obs(batch.next_obs)
+            next_online = self._q_online(next_net_obs)             # [B, K, A] (+prior)
             next_actions = torch.argmax(next_online, dim=2, keepdim=True)  # [B, K, 1]
-            next_target = self._q_target(batch.next_obs)           # [B, K, A] (+same prior)
+            next_target = self._q_target(next_net_obs)             # [B, K, A] (+same prior)
             next_q = next_target.gather(2, next_actions).squeeze(2)  # [B, K]
             reward = batch.reward.unsqueeze(1)                     # [B, 1]
             done = batch.done.unsqueeze(1)                         # [B, 1]
@@ -323,12 +355,13 @@ class BDQNAgent:
         # Shared forward with a 1/K gradient hook on the trunk features: the K heads'
         # gradients into the shared trunk are averaged (Osband 2016 §6.1), while each
         # head's own parameters keep their unscaled gradient.
-        features = self.online.trunk_features(batch.obs)               # [B, F]
+        net_obs = self._net_obs(batch.obs)
+        features = self.online.trunk_features(net_obs)                 # [B, F]
         if features.requires_grad:
             features.register_hook(lambda g: g / self.K)
         # Trainable head outputs + the fixed prior (a detached constant, so it shifts the
         # predicted Q but contributes no gradient — the 1/K trunk hook is untouched).
-        q_all = self.online.heads_forward(features) + self._prior_term(batch.obs)  # [B, K, A]
+        q_all = self.online.heads_forward(features) + self._prior_term(net_obs)  # [B, K, A]
         action_idx = batch.action.view(-1, 1, 1).expand(-1, self.K, 1)  # [B, K, 1]
         q_taken = q_all.gather(2, action_idx).squeeze(2)               # [B, K]
 

@@ -1,0 +1,49 @@
+# Example config — NoisyNet-DQN on MinAtar Breakout (development).
+# This is the Part-B counterpart of example_ddqn_deepsea_dev.yaml and the Session-3 pipeline
+# spine. Development role: the numbers below are placeholders and MAY be omitted; a
+# confirmatory config must pin every one explicitly (enforced by src/config.load_config).
+#
+# Part B differs from Part A in exactly two structural ways:
+#   * the budget is keyed in ENV STEPS (total_steps + checkpoint_steps), not episodes;
+#   * the backbone is the conv trunk (16 filters, 3x3, stride 1 -> ReLU -> FC), so
+#     hidden_sizes carries a SINGLE width read as the trunk's FC width.
+# Everything else — the switchboard, the three parameter classes, the RNG derivation — is
+# identical, which is what keeps the code-path purity gate (C11) checkable across both parts.
+run_id: example_noisynet_breakout_dev
+role: development            # confirmatory | development | exploratory
+part: B                      # A = DeepSea mechanism, B = MinAtar performance
+method: noisynet             # ddqn_egreedy | noisynet | bdqn | rp_bdqn | qrdqn
+env: breakout                # breakout | asterix | seaquest | freeway | space_invaders
+master_seed: 0               # study-wide; the frozen value is pinned at the Session-1 freeze
+
+# --- switchboard (reference cell: the baseline) ---
+use_rule: episodic           # episodic | per_step | ensemble_mean (unused by NoisyNet)
+prior: off                   # on | off (unused by NoisyNet)
+K: 1                         # ensemble size (NoisyNet is single-head)
+arm: noisynet                # method-named cell_id: NoisyNet is NOT a switchboard cell, so it
+                             # must not share the DDQN reference arm (episodic|off|K1) — the
+                             # RNG streams key on cell_id alone and a shared arm would give the
+                             # two baselines identical init/replay/action_noise seeds.
+
+# --- three-class parameters ---
+backbone:                    # class 1: backbone nuisance (development placeholders)
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+  hidden_sizes: [128]        # conv-trunk FC width (MinAtar standard)
+  buffer_capacity: 100000
+  min_buffer: 1000
+  target_update_period: 1000
+factor_specific:             # class 3: only the varied factor's own params may differ
+  prior_scale: null          # prior is off (NoisyNet is not an ensemble method)
+  eps_schedule: null         # NoisyNet replaces ε-greedy with parametric noise
+  sigma0: 0.5                # NoisyNet noise-init scale (factorized, Fortunato et al. 2018)
+
+# --- budget & seeds ---
+env_budget:
+  total_steps: 100000        # development budget; the pre-registered Part-B ladder is
+  checkpoint_steps:          # 100k / 500k / 1M with checkpoints at each rung
+    - 25000
+    - 50000
+    - 100000
+seeds: [0, 1, 2]             # explicit; confirmatory Part B uses the pre-registered count

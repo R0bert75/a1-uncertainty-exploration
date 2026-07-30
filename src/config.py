@@ -56,7 +56,16 @@ VALID_ENVS = ("deep_sea", "breakout", "asterix", "seaquest", "freeway", "space_i
 # prior scaled by factor_specific.prior_scale. ``rp_bdqn`` is the Part-B named-method alias for
 # that prior=on ensemble and builds through the same factory.
 IMPLEMENTED_METHODS = ("ddqn_egreedy", "noisynet", "bdqn", "rp_bdqn")
-IMPLEMENTED_ENVS = ("deep_sea",)
+# Part A (DeepSea) + all five Part-B MinAtar games now build. ``qrdqn`` remains the only
+# recognized-but-unimplemented method (the exploratory distributional control).
+IMPLEMENTED_ENVS = (
+    "deep_sea",
+    "breakout",
+    "asterix",
+    "seaquest",
+    "freeway",
+    "space_invaders",
+)
 
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
 ENSEMBLE_METHODS = ("bdqn", "rp_bdqn")
@@ -264,12 +273,18 @@ def resolve_config(data: dict[str, Any], *, source_path: str | None = None) -> R
     _require(len(set(seeds)) == len(seeds), f"seeds must be unique, got {seeds!r}")
 
     # --- cell_id (RNG-derivation key) ---
-    if data["part"] == "A" and data.get("method") == "noisynet":
-        # NoisyNet is a Part-A ride-along baseline (Reviewer Fix 3), not a cell of the
-        # ensemble switchboard: it has no use_rule/prior/K. It must carry its own explicit
-        # arm so its RNG-derivation cell_id is distinct from the DDQN reference cell
-        # (episodic|off|K1) — the streams key on cell_id alone, so a shared arm would
-        # collide the two baselines' seeds.
+    if data.get("method") == "noisynet":
+        # NoisyNet is a ride-along baseline (Reviewer Fix 3), not a cell of the ensemble
+        # switchboard: it has no use_rule/prior/K. It must carry its own explicit arm so its
+        # RNG-derivation cell_id is distinct from the DDQN reference cell (episodic|off|K1) —
+        # the streams key on cell_id alone, so a shared arm would collide the two baselines'
+        # seeds (identical init/replay/action_noise draws, i.e. correlated rather than
+        # independent runs).
+        #
+        # The rule is deliberately **part-independent**: NoisyNet is one of the canonical four
+        # on MinAtar (spec §2.1) as well as the Part-A ride-along, and the collision mechanism
+        # — streams keyed on cell_id — does not know which part it is in. Scoping this to
+        # Part A alone had let the Part-B NoisyNet config silently share the baseline's seeds.
         arm = data.get("arm")
         _require(
             isinstance(arm, str) and arm and "|" not in arm,
@@ -340,6 +355,63 @@ def _deep_sea_dims(cfg: RunConfig) -> tuple[int, int, int]:
     return size, size * size, 2
 
 
+def _minatar_dims(cfg: RunConfig) -> tuple[tuple[int, int, int], int, int]:
+    """``(obs_shape, obs_dim, n_actions)`` for a MinAtar run.
+
+    Unlike DeepSea (whose observation size comes from the tuned ``deep_sea_size``), MinAtar's
+    observation shape is a property of the game, so it is read from the verified channel table
+    in :mod:`src.minatar_env` rather than from the config — there is nothing here for a config
+    to get wrong, and no numeric value to freeze.
+    """
+    from src.minatar_env import GRID_SIZE, MINATAR_CHANNELS, N_ACTIONS
+
+    channels = MINATAR_CHANNELS[cfg.env]
+    obs_shape = (channels, GRID_SIZE, GRID_SIZE)
+    return obs_shape, channels * GRID_SIZE * GRID_SIZE, N_ACTIONS
+
+
+def is_minatar(env: str) -> bool:
+    """True for the five MinAtar games (Part B), False for DeepSea (Part A)."""
+    from src.minatar_env import MINATAR_GAMES
+
+    return env in MINATAR_GAMES
+
+
+def step_budget(cfg: RunConfig) -> tuple[int, tuple[int, ...]]:
+    """``(total_steps, checkpoint_steps)`` for a step-budgeted (MinAtar) run.
+
+    MinAtar runs are budgeted in **env steps**, not episodes: ``env_budget.total_steps`` with
+    ``env_budget.checkpoint_steps`` the cumulative-step grid at which metrics are recorded.
+    Both are read from the config — they are tuned/pre-registered quantities and never
+    defaulted in source. Checkpoints must be sorted, unique, positive, and ``<= total_steps``.
+    """
+    budget = cfg.data.get("env_budget") or {}
+    total = budget.get("total_steps")
+    _require(
+        isinstance(total, int) and not isinstance(total, bool) and total >= 1,
+        f"env_budget.total_steps must be a positive int for a MinAtar run, got {total!r}",
+    )
+    raw = budget.get("checkpoint_steps")
+    _require(
+        isinstance(raw, (list, tuple)) and len(raw) >= 1,
+        f"env_budget.checkpoint_steps must be a non-empty list, got {raw!r}",
+    )
+    _require(
+        all(isinstance(c, int) and not isinstance(c, bool) and c >= 1 for c in raw),
+        f"env_budget.checkpoint_steps must all be positive ints, got {raw!r}",
+    )
+    ckpts = tuple(int(c) for c in raw)
+    _require(
+        list(ckpts) == sorted(set(ckpts)),
+        f"env_budget.checkpoint_steps must be sorted and unique, got {list(ckpts)}",
+    )
+    _require(
+        ckpts[-1] <= total,
+        f"env_budget.checkpoint_steps max ({ckpts[-1]}) exceeds total_steps ({total})",
+    )
+    return int(total), ckpts
+
+
 def build_env(cfg: RunConfig, seed_index: int):
     """Instantiate the environment for one seed. Raises for envs not yet implemented."""
     if cfg.env not in IMPLEMENTED_ENVS:
@@ -347,6 +419,16 @@ def build_env(cfg: RunConfig, seed_index: int):
             f"env {cfg.env!r} is recognized but not yet implemented "
             f"(only {IMPLEMENTED_ENVS} build today)"
         )
+    if is_minatar(cfg.env):
+        from src.minatar_env import MinAtarEnv
+
+        return MinAtarEnv(
+            cfg.env,
+            master_seed=cfg.master_seed,
+            cell_id=cfg.cell_id,
+            seed_index=seed_index,
+        )
+
     from src.deep_sea import DeepSea
 
     size, _, _ = _deep_sea_dims(cfg)
@@ -367,19 +449,26 @@ def build_agent(cfg: RunConfig, seed_index: int):
             "Bootstrapped-DQN agent)"
         )
     _require(
-        cfg.env == "deep_sea",
-        f"build_agent currently wires deep_sea only, got env={cfg.env!r}",
+        cfg.env in IMPLEMENTED_ENVS,
+        f"build_agent does not wire env={cfg.env!r} (implemented: {IMPLEMENTED_ENVS})",
     )
-    _, obs_dim, n_actions = _deep_sea_dims(cfg)
+    # Backbone family follows the env: flat MLP for DeepSea, conv trunk for MinAtar. The
+    # agents themselves are identical either way — obs_shape=None selects the MLP path — so
+    # the per-contrast code-path purity gate (C11) still compares like with like.
+    if is_minatar(cfg.env):
+        obs_shape, obs_dim, n_actions = _minatar_dims(cfg)
+    else:
+        obs_shape = None
+        _, obs_dim, n_actions = _deep_sea_dims(cfg)
     backbone = cfg.data.get("backbone") or {}
     factor = cfg.data.get("factor_specific") or {}
 
     if cfg.method == "ddqn_egreedy":
-        return _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
+        return _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape)
     if cfg.method == "noisynet":
-        return _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index)
+        return _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape)
     if cfg.method in ("bdqn", "rp_bdqn"):
-        return _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index)
+        return _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape)
     raise NotImplementedError(f"no factory branch for method {cfg.method!r}")  # unreachable
 
 
@@ -393,10 +482,10 @@ def _apply_backbone(kwargs: dict[str, Any], backbone: dict[str, Any]) -> None:
             kwargs[opt] = tuple(backbone[opt]) if opt == "hidden_sizes" else backbone[opt]
 
 
-def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
+def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape=None):
     from src.ddqn import DDQNAgent, DDQNConfig
 
-    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions}
+    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions, "obs_shape": obs_shape}
     _apply_backbone(kwargs, backbone)
     # ε schedule (Class-3) — a nested mapping when specified.
     eps = factor.get("eps_schedule")
@@ -410,10 +499,10 @@ def _build_ddqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
     )
 
 
-def _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index):
+def _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape=None):
     from src.noisynet import NoisyNetAgent, NoisyNetConfig
 
-    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions}
+    kwargs: dict[str, Any] = {"obs_dim": obs_dim, "n_actions": n_actions, "obs_shape": obs_shape}
     _apply_backbone(kwargs, backbone)
     # sigma0 (the NoisyNet noise-init scale) is this method's Class-3 tunable, analogous to
     # the ε schedule for the ε-greedy baseline. Absent -> the development placeholder.
@@ -425,7 +514,7 @@ def _build_noisynet(cfg, obs_dim, n_actions, backbone, factor, seed_index):
     )
 
 
-def _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
+def _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape=None):
     from src.bdqn import BDQNAgent, BDQNConfig
 
     # ``prior`` (a Part-A factor) and the Part-B named method must agree: prior=on is RP-BDQN,
@@ -440,6 +529,7 @@ def _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index):
     kwargs: dict[str, Any] = {
         "obs_dim": obs_dim,
         "n_actions": n_actions,
+        "obs_shape": obs_shape,
         "K": cfg.data["K"],
         "use_rule": cfg.data["use_rule"],
     }

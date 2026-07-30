@@ -32,7 +32,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from src.networks import MLPQNetwork
+from src.networks import build_q_network
 from src.replay_buffer import ReplayBuffer, Transition
 from src.utils import conventions
 
@@ -48,6 +48,11 @@ class DDQNConfig:
 
     obs_dim: int
     n_actions: int
+    #: Channel-first ``(C, H, W)`` observation shape for the conv (MinAtar) backbone.
+    #: ``None`` = the flat/MLP DeepSea path, which stays byte-identical to before this field
+    #: existed. When set, ``obs_dim`` must equal ``prod(obs_shape)`` (the replay buffer stores
+    #: flattened rows) and ``hidden_sizes[-1]`` is read as the conv trunk's FC width.
+    obs_shape: tuple[int, ...] | None = None
     hidden_sizes: tuple[int, ...] = (64, 64)
     lr: float = 5e-4
     gamma: float = 0.99
@@ -93,15 +98,20 @@ class DDQNAgent:
         init_gen = conventions.derive_torch_generator(
             self.master_seed, self.cell_id, "init", self.seed_index
         )
-        self.online = MLPQNetwork(
+        self.online = build_q_network(
             config.obs_dim,
             config.n_actions,
             config.hidden_sizes,
+            obs_shape=config.obs_shape,
             n_heads=1,
             generator=init_gen,
         ).to(self.device)
-        self.target = MLPQNetwork(
-            config.obs_dim, config.n_actions, config.hidden_sizes, n_heads=1
+        self.target = build_q_network(
+            config.obs_dim,
+            config.n_actions,
+            config.hidden_sizes,
+            obs_shape=config.obs_shape,
+            n_heads=1,
         ).to(self.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
@@ -132,9 +142,33 @@ class DDQNAgent:
         frac = min(1.0, step / max(1, cfg.eps_decay_steps))
         return float(cfg.eps_start - (cfg.eps_start - cfg.eps_end) * frac)
 
+    # ------------------------------------------------------------------ #
+    # Observation plumbing (no-ops on the flat/DeepSea path)
+    # ------------------------------------------------------------------ #
+    def _flat_obs(self, obs: np.ndarray) -> np.ndarray:
+        """Flatten a conv observation for replay storage; identity on the flat path.
+
+        The replay buffer stores fixed-width rows of ``(obs_dim,)``, so ``(C, H, W)``
+        observations are flattened on the way in and restored on the way out. Keeping the
+        buffer shape-agnostic means the Part-A and Part-B code paths differ only here.
+        """
+        if self.cfg.obs_shape is None:
+            return obs
+        return np.asarray(obs, dtype=np.float32).reshape(-1)
+
+    def _net_obs(self, batch_obs: torch.Tensor) -> torch.Tensor:
+        """Restore ``[B, C, H, W]`` from flat replay rows; identity on the flat path."""
+        if self.cfg.obs_shape is None:
+            return batch_obs
+        return batch_obs.view(batch_obs.shape[0], *self.cfg.obs_shape)
+
     @torch.no_grad()
     def greedy_action(self, obs: np.ndarray) -> int:
-        """argmax_a Q(obs, a) under the online net (ties by lowest action index)."""
+        """argmax_a Q(obs, a) under the online net (ties by lowest action index).
+
+        ``obs`` arrives in the env's own shape — flat for DeepSea, ``(C, H, W)`` for MinAtar —
+        so ``unsqueeze(0)`` yields the batch shape each backbone expects.
+        """
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         q = self.online(obs_t)[:, 0, :]  # [1, n_actions] — single head
         return int(torch.argmax(q, dim=1).item())
@@ -157,14 +191,15 @@ class DDQNAgent:
         done: bool,
     ) -> None:
         """Store a transition in replay."""
-        self.buffer.add(obs, action, reward, next_obs, done)
+        self.buffer.add(self._flat_obs(obs), action, reward, self._flat_obs(next_obs), done)
 
     def _td_target(self, batch: Transition) -> torch.Tensor:
         """Double-DQN target: online net selects a', target net evaluates it."""
         with torch.no_grad():
-            next_online = self.online(batch.next_obs)[:, 0, :]        # [B, A]
+            next_obs = self._net_obs(batch.next_obs)
+            next_online = self.online(next_obs)[:, 0, :]              # [B, A]
             next_actions = torch.argmax(next_online, dim=1, keepdim=True)  # [B, 1]
-            next_target = self.target(batch.next_obs)[:, 0, :]        # [B, A]
+            next_target = self.target(next_obs)[:, 0, :]              # [B, A]
             next_q = next_target.gather(1, next_actions).squeeze(1)   # [B]
             return batch.reward + self.cfg.gamma * (1.0 - batch.done) * next_q
 
@@ -185,7 +220,7 @@ class DDQNAgent:
             done=batch.done.to(self.device),
         )
         target = self._td_target(batch)
-        q = self.online(batch.obs)[:, 0, :]                          # [B, A]
+        q = self.online(self._net_obs(batch.obs))[:, 0, :]            # [B, A]
         q_taken = q.gather(1, batch.action.unsqueeze(1)).squeeze(1)  # [B]
         loss = nn.functional.smooth_l1_loss(q_taken, target)         # Huber (DQN standard)
 
