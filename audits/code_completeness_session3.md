@@ -148,17 +148,34 @@ which touches a frozen value:
    contrast-pair manifest to check against (which pairs are reported, and which factor each
    pair varies), so the manifest is the real design question, not the checking code. Worth
    scoping before the freeze even if the script lands after it.
-2. **G10 — disagreement logging.** §8 lists it at item 5, *before* the battery at item 9, which
-   suggests it is meant as a standalone online metric rather than a battery member. Needs a
-   one-line decision: if it is `d(s) = 1 − modal fraction` over a probe set, it is battery item
-   §3.3 #3 and belongs with G1; if it is a cheap per-checkpoint ensemble spread, it is a
-   separate metric row and can be added now.
+2. **G10 — disagreement logging.** *(Superseded 2026-07-30 — this entry was wrong; see
+   `protocol/decisions/diagnostics_substrate_and_buffer_dtype.md`.)* It is **not** unscheduled
+   and **not** a scope decision. §8 item 5 names it as the current scheduled item, and §3.3
+   freezes all nine diagnostics mathematically. Because diagnostics #1–#4 and #7 need Q\*
+   (DeepSea only, §8 item 6) while item 5 precedes it, item-5 "disagreement logging" can only
+   mean the **recording substrate**: the per-checkpoint `[S, M, A]` value-sample tensor.
+   Decision recorded: persist raw samples, compute the nine statistics offline in
+   `analysis/rq2l/` (§3.6 makes an in-run-path statistics bug void the confirmatory block).
 
-**G13 (replay-buffer dtype)** is worth a decision before any multi-seed MinAtar run: the
-buffer stores `float32` at the pre-registered 100k capacity, i.e. 320–800 MB per run depending
-on the game, where `uint8` would be 80–200 MB. `ReplayBuffer` already accepts `obs_dtype`, so
-this is a one-line change in the agent constructors. Correctness is unaffected; the constraint
-is how many seeds fit in memory concurrently. Class-1 nuisance, so no freeze implication.
+**G13 (replay-buffer dtype)** — decided 2026-07-30, and the reasoning in the line above was
+wrong in two ways. (a) It is **not** a Class-1 nuisance: all six environments emit observations
+in exactly `{0.0, 1.0}`, the `float32 → uint8` round trip is exactly lossless, and a
+1,500-step/501-update run under each dtype gave **identical actions, rewards, losses and final
+weights** (max |Δ| = 0.0) — a provably bit-exact representation change has no behaviour to
+inherit, so it consumes no freeze item. (b) It is **not** a change in the agent constructors:
+`gather()` currently returns the *storage* dtype, so the cast must be encapsulated in the buffer
+(`add()` casts to storage, `gather()` casts back to `float32`), which means zero agent changes
+and strengthens C11 purity. The binding constraint is concurrency, not per-run headroom: 8-way
+at `float32` needs 2.56 GB (breakout) to 6.40 GB (seaquest) against ~8 GiB available.
+See `protocol/decisions/diagnostics_substrate_and_buffer_dtype.md`.
+
+**G15 (new, unlisted in §3) — mini-search / sweep driver + IQM selection.** `trainer.main()`
+takes a single resolved config and loops its seeds; there is no driver that executes a
+*set* of configs and selects among them, and `IQM` appears nowhere in `src/` or `analysis/`.
+Freeze item 3 pins IQM as the selection statistic and freeze item 2 pins a backbone-tuning
+budget plus two factor-specific mini-searches — so §8 item 5's backbone-tuning pass, item 7's
+`prior_scale` search and item 8's `eps_schedule` search all need this. It is the next
+scientific item's blocker, not a later-session concern.
 
 ## 5. Verification at the audited commit
 

@@ -1,5 +1,12 @@
 # Final-freeze readiness — Session 1, Stage 2
 
+> **Clock update 2026-07-30.** The Gate-1 one-week window described below has **elapsed**
+> (`prereg-draft` tagged 2026-07-22; day 8 today). Per item 18 the next step is mechanical:
+> silence → **nominate a substitute reviewer**; if none engages within a further week
+> (~2026-08-05) → **documented waiver**. Neither has been recorded in `protocol/`, so Gate 1
+> is now an *owner action that is overdue*, not a window to wait out. Gates 2 and 3 are
+> unchanged. The body below is the 2026-07-23 assessment and is kept for provenance.
+
 **Assessed 2026-07-23** against repo HEAD `f115f99` (all values verified live: 157 tests
 pass, ruff clean, CI green on the latest push; `prereg-draft` tag confirmed on GitHub).
 
