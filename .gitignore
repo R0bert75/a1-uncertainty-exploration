@@ -34,3 +34,7 @@ checkpoints/
 # dev_battery/ is a one-off, smoke-scale exploratory run (not pre-registered
 # protocol). Its data + figure are archived as artifacts, not committed here.
 dev_battery/
+
+# Scratch logs from local smoke launches (the run's data lives in dev_battery/).
+dev_battery_smoke.log
+_view_*.png

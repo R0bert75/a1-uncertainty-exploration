@@ -67,12 +67,21 @@ make figures   # rebuild every figure from logs/ only
 protocol/        pre-registration + advisor one-pager (committed BEFORE any result)
 related_work/    positioning / nearest-neighbour table
 configs/         one file per (method, env, budget); seeds explicit
-src/             single-file-per-method implementations + shared utils/ and diagnostics/
-analysis/        hierarchy/ (§1.1 primary + fixed-sequence) and rq2l/ (concordance + permutation)
-audits/c13/      configuration-identity audit outputs
+src/             ddqn.py · noisynet.py · bdqn.py (+ randomized priors = RP-BDQN)
+                 deep_sea.py (Part A env + exact Q*) · minatar_env.py (Part B adapter)
+                 networks.py (MLP + conv trunks, K heads, noisy variants)
+                 replay_buffer.py · trainer.py (episode lane + step lane)
+                 utils/conventions.py (RNG streams, frozen CSV schema)
+                 diagnostics/ (frozen battery members; §3.3 #6 implemented)
+analysis/        make_figures.py (rebuilds every figure from logs/ alone).
+                 hierarchy/ (§1.1 primary + fixed-sequence) and rq2l/ (concordance +
+                 permutation) are reserved and EMPTY — that analysis is written after the
+                 protocol freeze, on committed CSVs.
+audits/          c13_audit.py (configuration identity) · config_schema_check.py (§4 CI)
+                 c13/ audit outputs · code_completeness_session3.md (pre-freeze audit)
 logs/            CSV per run — the source of truth for every figure
 figures/         outputs of `make figures`
-tests/           smoke + convention round-trip tests
+tests/           unit + convention + determinism tests (271 at the current commit)
 VALIDATION.md    C0–C13 correctness checklist, ticked per session
 ```
 
