@@ -44,7 +44,15 @@ class ReplayBuffer:
             DeepSea/MinAtar inputs).
         rng: numpy ``Generator`` for the ``replay`` stream. Owned by the caller so the
             buffer never creates its own entropy source.
-        obs_dtype: storage dtype for observations (default ``float32``).
+        obs_dtype: storage dtype for observations (default ``float32``). Set to
+            ``np.uint8`` for the binary-plane environments (all six emit observations in
+            exactly ``{0.0, 1.0}``) to cut observation storage 4x. The cast is
+            **encapsulated here**: ``add`` casts to the storage dtype and :meth:`gather`
+            always casts back to ``float32``, so agents are dtype-agnostic and every
+            method shares one code path (gate C11). ``add`` additionally *verifies*
+            losslessness on an integer storage dtype rather than assuming it — the
+            round-trip is exact because of what these environments emit, which is a
+            property of the environments and not of the cast.
     """
 
     def __init__(
@@ -60,6 +68,11 @@ class ReplayBuffer:
         self.capacity = int(capacity)
         self.obs_shape = tuple(int(d) for d in obs_shape)
         self._rng = rng
+
+        self._obs_dtype = np.dtype(obs_dtype)
+        # Integer storage is a compression of a float observation, so it is only valid if
+        # the round trip is exact. We check per-write rather than trusting the caller.
+        self._obs_is_integer = self._obs_dtype.kind in "ui"
 
         self._obs = np.zeros((self.capacity, *self.obs_shape), dtype=obs_dtype)
         self._next_obs = np.zeros((self.capacity, *self.obs_shape), dtype=obs_dtype)
@@ -85,15 +98,36 @@ class ReplayBuffer:
         next_obs: np.ndarray,
         done: bool,
     ) -> None:
-        """Store one transition, overwriting the oldest when at capacity."""
+        """Store one transition, overwriting the oldest when at capacity.
+
+        On an integer storage dtype the observation cast is asserted lossless. This costs
+        one comparison per write and converts a silent-corruption failure mode (values
+        truncated toward zero, invisible in the loss curve) into an immediate error.
+        """
         i = self._pos
-        self._obs[i] = obs
-        self._next_obs[i] = next_obs
+        if self._obs_is_integer:
+            self._store_obs_checked(self._obs, i, obs)
+            self._store_obs_checked(self._next_obs, i, next_obs)
+        else:
+            self._obs[i] = obs
+            self._next_obs[i] = next_obs
         self._action[i] = action
         self._reward[i] = reward
         self._done[i] = float(done)
         self._pos = (self._pos + 1) % self.capacity
         self._size = min(self._size + 1, self.capacity)
+
+    def _store_obs_checked(self, target: np.ndarray, i: int, obs: np.ndarray) -> None:
+        """Write ``obs`` into integer storage, verifying the cast loses nothing."""
+        src = np.asarray(obs)
+        target[i] = src
+        if not np.array_equal(target[i].astype(np.float32), src.astype(np.float32)):
+            raise ValueError(
+                f"observation is not representable in storage dtype {self._obs_dtype}: "
+                "the cast would silently corrupt the replayed transition. Integer "
+                "observation storage is only valid for environments whose observations "
+                "are exactly integer-valued (the six in this study emit {0.0, 1.0})."
+            )
 
     def can_sample(self, batch_size: int) -> bool:
         return self._size >= batch_size
@@ -113,12 +147,18 @@ class ReplayBuffer:
         return self._rng.integers(0, self._size, size=batch_size)
 
     def gather(self, idx: np.ndarray) -> Transition:
-        """Materialize the transitions at ``idx`` as torch tensors (no RNG draw)."""
+        """Materialize the transitions at ``idx`` as torch tensors (no RNG draw).
+
+        Observations are **always** returned as ``float32`` regardless of storage dtype, so
+        the storage choice is invisible to every agent and cannot leak an integer tensor
+        into a network forward pass (where torch's type promotion would either raise or,
+        worse, silently produce integer arithmetic).
+        """
         return Transition(
-            obs=torch.as_tensor(self._obs[idx]),
+            obs=torch.as_tensor(self._obs[idx].astype(np.float32, copy=False)),
             action=torch.as_tensor(self._action[idx]),
             reward=torch.as_tensor(self._reward[idx]),
-            next_obs=torch.as_tensor(self._next_obs[idx]),
+            next_obs=torch.as_tensor(self._next_obs[idx].astype(np.float32, copy=False)),
             done=torch.as_tensor(self._done[idx]),
         )
 
