@@ -14,6 +14,10 @@ the next section for why the sign-off does not license an edit today.
 | 7 — probe set | Exhaustive, `\|S\| = N(N+1)/2`, no cap; no MinAtar probe set | approved |
 | 2 — search budget | `n_backbone = 12`, `n_mini = 4` (each of two) | approved |
 | 1 — seed counts | **3 seeds per tuning candidate** (new sub-clause, see Gap 3) | approved |
+| 2 — backbone search *objective* | **IQM of per-seed discovery-curve AUC** (new sub-clause, see Gap 4) | **open — needs sign-off** |
+
+**One item is not yet approved.** Gap 4 was surfaced on 2026-07-31, after the sign-off above, by
+the steps 4–9 build audit. It blocks the sweep driver (spec §8 step 5a) and nothing else.
 
 ## Why this file exists instead of an edit to `preregistration.md`
 
@@ -282,6 +286,71 @@ defect as items 2 and 7.
 
 `(12 + 2 × 4) × 6 = 120` tuning runs; with the 110 dev-cell runs the DeepSea development tier
 totals **230**, inside its frozen ≈ 150–250 envelope. No other frozen count moves.
+
+---
+
+## Gap 4 — Freeze item 2: the backbone search names no objective *metric*
+
+**Surfaced 2026-07-31 by the steps 4–9 build audit (`audits/steps_4_9_build_plan.md`).**
+Status: **open, needs owner sign-off before the search runs.**
+
+### The defect
+
+Freeze item 2 pins a full objective for both class-3 mini-searches — `prior_scale` by "IQM of the
+canonical prior-on cell `(episodic, on, 10)` on development sizes", `eps_schedule` by "IQM of
+`(mean_eps, off, 10)`" — and item 3 pins the statistic (IQM) and tie-break (lower parameter value)
+"throughout". **For the class-1 backbone search it names no metric.** IQM is a reduction; IQM *of
+what* is not stated. Two candidates could be ranked by terminal discovery probability, by area under
+the discovery curve, by mean episode return, or by episodes-to-first-discovery, all of which are
+"IQM" and all of which give different winners.
+
+### Why it is not cosmetic
+
+DeepSea's primary outcome is **binary per seed** (`discovered`, `src/trainer.py`). At the approved
+3 seeds × 2 development sizes = 6 runs per candidate, IQM of a 6-vector of 0/1 takes only **five
+distinct values** — it collapses 0/6 with 1/6, and 5/6 with 6/6:
+
+| successes k | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|---|
+| IQM | 0.000 | **0.000** | 0.167 | 0.500 | 0.833 | **1.000** | 1.000 |
+
+Simulated over a 12-candidate field (20 000 trials per regime), the terminal-binary objective ties
+at the top of the field in 44 % of searches when few candidates discover and **98 %** once several
+are good. Item 3's tie-break is "the lower parameter value", which is uncorrelated with performance —
+so in the regime the search is *supposed* to resolve, selection is close to arbitrary.
+
+### Recommendation: area under the discovery curve
+
+`trainer.py` already logs `discovery_prob` at **every checkpoint**, so the per-seed mean of that
+curve is recoverable from the existing CSV with no new instrumentation and no re-run. It rewards
+discovering *earlier*, which is the property the backbone is being tuned for, and it is continuous:
+
+| regime (true discovery prob) | objective | P(tie at top) | P(pick true best) |
+|---|---|---|---|
+| hard (p ∈ 0.00–0.25) | terminal binary | 0.438 | 0.470 |
+| hard | **discovery AUC** | **0.112** | 0.466 |
+| mixed (p ∈ 0.05–0.60) | terminal binary | 0.445 | 0.587 |
+| mixed | **discovery AUC** | **0.027** | 0.587 |
+| easy (p ∈ 0.40–0.90) | terminal binary | 0.980 | 0.439 |
+| easy | **discovery AUC** | **0.053** | **0.610** |
+
+### Proposed item 2 sub-clause
+
+> The class-1 backbone search objective is the **IQM across tuning seeds of the per-seed area under
+> the online discovery-probability curve** (the unweighted mean of `discovery_prob` over the run's
+> checkpoints), pooled across the two development sizes. Ties are broken by the lower parameter value
+> (item 3). This objective is a *selection input*, not a reported estimand; the primary outcome for
+> all reported results remains terminal discovery probability (§1.1), unchanged.
+
+### Why this must be pre-specified rather than chosen at run time
+
+Both objectives are computable from the same logs. Choosing between them after seeing the search
+results would be a post-hoc degree of freedom over the backbone that every cell in the study
+inherits — the single largest such freedom in the design. It costs nothing to fix now and cannot be
+fixed later.
+
+**Blocks:** step 5a (sweep driver) — which metric it reduces. Does **not** block steps 7 or 8, whose
+objectives are already pinned.
 
 ---
 
