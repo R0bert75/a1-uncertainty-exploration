@@ -7,7 +7,7 @@ FIGS   ?= figures
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env test lint smoke dummy figures audit clean
+.PHONY: help env test lint smoke dummy figures audit ci-parity clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -39,7 +39,10 @@ schema:  ## Assert every committed config resolves under the frozen schema (spec
 audit:  ## Run the C13 configuration-identity audit
 	$(PYTHON) audits/c13_audit.py --configs $(LOGS) --out audits/c13
 
-smoke: test schema figures audit  ## Full local smoke check (tests + schema + figures + audit)
+ci-parity:  ## Run the workflow's inline assertion steps locally (they are not in pytest)
+	PYTHONPATH=. python audits/ci_parity_check.py
+
+smoke: test schema figures audit ci-parity  ## Full local smoke check (tests + schema + figures + audit + CI parity)
 	@echo "smoke OK"
 
 clean:  ## Remove generated figures (logs are the source of truth; kept)

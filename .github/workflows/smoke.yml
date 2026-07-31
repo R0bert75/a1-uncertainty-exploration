@@ -32,8 +32,39 @@ jobs:
 
       - name: Assert derived-stream scheme (C1)
         run: |
-          pytest -q tests/test_conventions.py -k "derive" -x
-          PYTHONPATH=. python -c "from src.utils.conventions import derive_seed, STREAM_NAMES; assert derive_seed(0,'episodic|off|K10','init',0) == 8011425302454941550, 'derived-stream regression value drifted'; assert len(STREAM_NAMES) == 8, 'stream registry must be the full eight'; print('derived-stream scheme OK')"
+          pytest -q tests/test_conventions.py -k "derive or stream" -x
+          PYTHONPATH=. python - <<'PY'
+          from src.utils.conventions import derive_seed, STREAM_NAMES
+
+          # C1 invariant: no seed that has ever been derived may shift. Streams may be
+          # APPENDED (names, not positions, key the derivation), so this pins the bytes of
+          # the eight originals and requires them to remain an ordered prefix -- which
+          # catches reorder, rename, and removal while permitting growth. Asserting a bare
+          # len() == 8 here was wrong: it made a legal append look like a C1 violation.
+          ORIGINAL_EIGHT = (
+              "init", "env_mapping", "replay", "action_noise",
+              "bootstrap_mask", "eval_episodes", "probe_set", "noisynet_diag",
+          )
+          PINNED = {
+              "init": 8011425302454941550,
+              "env_mapping": 176538044932436750,
+              "replay": 8159814950184219800,
+              "action_noise": 5052484805708001628,
+              "bootstrap_mask": 2620863740542659760,
+              "eval_episodes": 4132105731905996667,
+              "probe_set": 2582891540777874814,
+              "noisynet_diag": 8467507595424508135,
+          }
+
+          assert STREAM_NAMES[:8] == ORIGINAL_EIGHT, (
+              f"the eight canonical streams must remain an ordered prefix, got {STREAM_NAMES[:8]}"
+          )
+          assert len(set(STREAM_NAMES)) == len(STREAM_NAMES), "duplicate stream name"
+          for name, expected in PINNED.items():
+              got = derive_seed(0, "episodic|off|K10", name, 0)
+              assert got == expected, f"derived-stream regression: {name} {expected} -> {got}"
+          print(f"derived-stream scheme OK ({len(STREAM_NAMES)} streams, 8 pinned)")
+          PY
 
       - name: Rebuild figures from logs only
         run: |
