@@ -1,6 +1,6 @@
 # Project status — plain language
 
-**As of 2026-07-30, `main` = `c62f57c`, CI green, 335 tests.**
+**As of 2026-07-30, `main` = `3f59fd7`, CI green, 335 tests.**
 
 This document answers five questions in plain terms. It is a summary of the detailed
 documents, not a replacement for them: the authoritative sources are
@@ -99,18 +99,39 @@ methodological review is for.
 
 ## 4. What decisions are pending?
 
-**Two are yours and block progress:**
+**Two are yours and block progress** (both recommendations were revised on 2026-07-30 — see the
+audit note below):
 
 | # | Decision | Recommendation | Why it blocks |
 |---|---|---|---|
-| 1 | Probe-set size `\|S\|` and construction rule | **256** for DeepSea, 512 for MinAtar, method-independent sampling | Freeze item 7 is half-written. Blocks step 9 (the diagnostics battery). |
-| 2 | Search distributions + tuning budget `n_backbone` | **24 draws**, distributions as drafted | Freeze item 2 claims these are frozen; they exist nowhere. Blocks steps 5, 7, 8. |
+| 1 | Probe-set construction rule (freeze item 7) | **Exhaustive: `\|S\| = N(N+1)/2`, no cap.** No MinAtar probe set. | Item 7 is half-written. Blocks step 9 (the diagnostics battery). |
+| 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`, 3 seeds per candidate** | Item 2 claims these are frozen; they exist nowhere. Blocks steps 5, 7, 8. |
 
 Both recommendations, with the arithmetic behind them, are in
-`protocol/decisions/staged_stage3_protocol_fixes.md`. Neither is a coin-flip: `n_backbone = 24`
-is nearly forced by the already-frozen ~240-run pilot budget (192 + 32 + 12 = 236), and
-`|S| = 256` is the value that makes both DeepSea development sizes exhaustive rather than
-subsampled. Only `|S|` is genuinely discretionary.
+`protocol/decisions/staged_stage3_protocol_fixes.md`.
+
+**Audit note — the earlier recommendations in this file were wrong.** An earlier version
+recommended `|S| = 256` for DeepSea, `|S| = 512` for MinAtar, and `n_backbone = 24`. Checked
+against the frozen documents rather than against intuition, all three failed:
+
+- **`|S|` is not a value at all.** Item 7 says the `probe_set` stream governs *any* sampling —
+  permissive, so enumeration is already compliant. Enumeration costs ~1.35 GB for the whole
+  confirmatory sweep, while a 256 cap would have probed only 55% of reachable states at `N = 30`
+  and 20% at `N = 50` — where RQ2-L is a v1.0 submission-gate deliverable. Enumeration also
+  *removes* the item from the freeze list instead of filling it in.
+- **MinAtar has no probe set.** Every §3.3 diagnostic references `Q*`, computable only on
+  DeepSea; neither frozen document contains a MinAtar diagnostics clause. The 512 answered a
+  question the protocol never asked.
+- **`n_backbone = 24` overspends its budget by 40%.** Its justification (`192 + 32 + 12 = 236 ≈
+  240`) was wrong three ways: the backbone is tuned *once* on DDQN, not per method; §3.4's 240
+  counts runs, not configs; and the search runs on DeepSea development sizes, so it is charged
+  to the DeepSea dev budget (150–250 runs), not to MinAtar's 240. The 10 dev cells alone consume
+  110 of that, leaving 40–140 for all tuning. On the MinAtar side, 240 runs ÷ 5 pilot seeds
+  minus the 12-config `K_shared` sweep = 18 draws per tuning game, exactly.
+
+**A new gap surfaced from that audit:** the **per-candidate tuning seed count** is a value freeze
+item 1 should state and does not. It is now the only genuinely discretionary number left
+(3 recommended; 5 would force `n_backbone` down to 8).
 
 **One is a process action, and it is overdue:** the external methodological review was
 time-boxed, and the window has elapsed with no reviewer response on record. Under the freeze
