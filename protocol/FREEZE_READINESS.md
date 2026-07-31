@@ -7,6 +7,29 @@
 > is now an *owner action that is overdue*, not a window to wait out. Gates 2 and 3 are
 > unchanged. The body below is the 2026-07-23 assessment and is kept for provenance.
 
+> **Missing-values update 2026-07-30 — CLOSED.** A pre-freeze audit found that two freeze-list
+> items claimed values the draft did not actually contain (item 7 probe-set construction, item 2
+> search distributions/budget), and a third defect surfaced from auditing the second (item 1 has
+> no seed count for a tuning candidate). **All three are now owner-approved**, with the text and
+> arithmetic in `protocol/decisions/staged_stage3_protocol_fixes.md`:
+>
+> | Item | Approved value |
+> |---|---|
+> | 7 | Probe set **exhaustive**, `\|S\| = N(N+1)/2`, no cap; **no MinAtar probe set** (the battery needs `Q*`) |
+> | 2 | `n_backbone = 12`, `n_mini = 4` each of two, distributions as drafted |
+> | 1 | **3 seeds per tuning candidate** (new sub-clause) |
+>
+> These are **staged, not applied**: `preregistration.md` is unchanged so that `prereg-draft`
+> stays a valid stable reference for the Gate-1 pass, and item 18 stage 3 is the designated
+> channel for incorporating them. Two consequential edits ride along at stage 3: item 1's phrase
+> "8 non-overlapping derived streams" becomes **9** (`hparam_search` added to `STREAM_NAMES` on
+> main, with a pinned-bytes test proving no already-derived seed shifted), and §3.4's DeepSea
+> development budget should note the 230-run composition (110 cell + 120 tuning).
+>
+> **Consequence for this document's verdict: unchanged.** The missing values were never one of
+> the three gates. Gates 1–3 below are still the binding constraints, and all three remain
+> owner/process actions rather than code.
+
 **Assessed 2026-07-23** against repo HEAD `f115f99` (all values verified live: 157 tests
 pass, ruff clean, CI green on the latest push; `prereg-draft` tag confirmed on GitHub).
 

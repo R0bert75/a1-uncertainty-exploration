@@ -1,6 +1,19 @@
 # Staged Stage-3 protocol fixes — proposed text, NOT yet in the pre-registration
 
-**Drafted 2026-07-30.** Status: **staged, not applied.**
+**Drafted 2026-07-30. Corrected 2026-07-30 (second pass).
+Owner sign-off 2026-07-30 — all recommendations below are APPROVED.**
+
+Status: **approved, staged, not yet applied.** The values are settled; what remains is
+mechanical application at stage 3. `preregistration.md` is deliberately still unchanged — see
+the next section for why the sign-off does not license an edit today.
+
+**Approved values:**
+
+| Freeze item | Value | Status |
+|---|---|---|
+| 7 — probe set | Exhaustive, `\|S\| = N(N+1)/2`, no cap; no MinAtar probe set | approved |
+| 2 — search budget | `n_backbone = 12`, `n_mini = 4` (each of two) | approved |
+| 1 — seed counts | **3 seeds per tuning candidate** (new sub-clause, see Gap 3) | approved |
 
 ## Why this file exists instead of an edit to `preregistration.md`
 
@@ -238,6 +251,40 @@ explicitly rather than let the search silently exceed it — and cap X's arithme
 methods of final-tier count × median pilot wall-clock ≤ X GPU-h) should be re-checked either
 way, since pilot wall-clock is its input.
 
+---
+
+## Gap 3 — Freeze item 1: the per-candidate tuning seed count (surfaced by the Gap 2 audit)
+
+### The defect
+
+Freeze item 1 pins seed counts for every *tier*: DeepSea development (10 for the two rule-input
+runs, 5 elsewhere), DeepSea confirmatory (20 per cell), MinAtar (3 dev → 5 pilot → 10 held-out).
+It has **no category for a tuning candidate.** A random-search draw is not a development cell and
+not a pilot run; it is a third thing the item does not name.
+
+This was invisible until Gap 2 was recomputed, because the first draft never priced the search in
+runs. It matters now for a concrete reason: the seed count is a **multiplier on the entire tuning
+budget**, so item 2's `n_backbone` is not even well-defined without it. At 3 seeds the approved
+`n_backbone = 12` costs 120 runs; at 5 it costs 200 and breaks the ceiling. Leaving it unstated
+would mean pre-registering a search budget whose actual cost is unspecified — the same class of
+defect as items 2 and 7.
+
+### Proposed addition to item 1
+
+> **Tuning-candidate seeds.** Each random-search candidate (backbone and both factor-specific
+> mini-searches) is evaluated at **3 seeds on each of the two development sizes** — 6 runs per
+> candidate. Selection is by IQM over those 6 runs per item 3. This count is deliberately lower
+> than the 5 used for development *cells*: a tuning candidate's IQM feeds a selection decision,
+> not a reported estimand, and no confidence interval is published for it. The winning
+> configuration is then run at the full development seed count as a normal cell.
+
+### Consequence for the run budget
+
+`(12 + 2 × 4) × 6 = 120` tuning runs; with the 110 dev-cell runs the DeepSea development tier
+totals **230**, inside its frozen ≈ 150–250 envelope. No other frozen count moves.
+
+---
+
 ### New RNG stream required
 
 The distributions above need a `hparam_search` stream. `STREAM_NAMES` in
@@ -250,8 +297,9 @@ expected tuple updated.
 
 ## Recommended sequence
 
-1. Owner signs off on the two corrected recommendations. **Neither is now the free choice the
-   first draft described:**
+1. ~~Owner signs off on the corrected recommendations.~~ **DONE 2026-07-30 — approved.** For the
+   record, what was approved: **`|S|` exhaustive / no MinAtar probe set**, **`n_backbone = 12`,
+   `n_mini = 4`**, and **3 seeds per tuning candidate** (Gap 3). Detail retained below:
    - **DeepSea `|S|`: exhaustive, no cap.** Not a value at all — `|S| = N(N+1)/2` follows from
      `N`. Compliant with item 7 as frozen (which permits rather than requires sampling), exact at
      every size including the confirmatory sizes where RQ2-L is a submission-gate deliverable,

@@ -129,8 +129,12 @@ def test_derive_seed_rejects_unknown_stream_and_bad_types():
         derive_seed(0, "cellA", "init", True)  # bool is not a valid index
 
 
-def test_stream_registry_is_the_full_eight():
-    # Reviewer Fix 1: the stream registry must cover all eight named streams.
+def test_stream_registry_is_the_full_nine():
+    # Reviewer Fix 1: the stream registry must cover every named stream, in order.
+    # Eight through 2026-07-30; ``hparam_search`` added with the approved freeze item 2
+    # (random search needs its own stream). Adding a NAME is safe -- names, not positions,
+    # key the derivation -- so nothing already derived shifts. The pre-registration's
+    # item-1 phrase "8 non-overlapping derived streams" must move to 9 at stage 3.
     assert STREAM_NAMES == (
         "init",
         "env_mapping",
@@ -140,7 +144,39 @@ def test_stream_registry_is_the_full_eight():
         "eval_episodes",
         "probe_set",
         "noisynet_diag",
+        "hparam_search",
     )
+
+
+def test_new_stream_is_independent_and_disturbs_nothing():
+    """Adding ``hparam_search`` must not perturb any pre-existing stream.
+
+    The registry comment claims "names, not positions, key the derivation", and the safety of
+    adding a stream mid-project rests entirely on that claim. These are the pinned bytes of the
+    eight original streams; if a future edit ever makes derivation position-sensitive, this
+    fails rather than silently invalidating every seed already drawn.
+    """
+    # Literal bytes, recorded when the registry held eight names. These are NOT recomputed
+    # from the registry -- hardcoding is the whole point, since a computed expectation would
+    # move in lockstep with any regression and assert nothing.
+    pinned = {
+        "init": 8011425302454941550,
+        "env_mapping": 176538044932436750,
+        "replay": 8159814950184219800,
+        "action_noise": 5052484805708001628,
+        "bootstrap_mask": 2620863740542659760,
+        "eval_episodes": 4132105731905996667,
+        "probe_set": 2582891540777874814,
+        "noisynet_diag": 8467507595424508135,
+    }
+    for name, expected in pinned.items():
+        assert derive_seed(0, "episodic|off|K10", name, 0) == expected, (
+            f"stream {name!r} changed -- every seed already derived is invalidated"
+        )
+
+    # And the new stream collides with none of them.
+    new = derive_seed(0, "episodic|off|K10", "hparam_search", 0)
+    assert new not in set(pinned.values())
 
 
 def test_derive_seed_sequence_is_reproducible_and_independent():

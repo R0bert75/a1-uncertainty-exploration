@@ -99,13 +99,18 @@ methodological review is for.
 
 ## 4. What decisions are pending?
 
-**Two are yours and block progress** (both recommendations were revised on 2026-07-30 — see the
-audit note below):
+**The two blocking value decisions are RESOLVED — owner-approved 2026-07-30:**
 
-| # | Decision | Recommendation | Why it blocks |
+| # | Decision | Approved value | Status |
 |---|---|---|---|
-| 1 | Probe-set construction rule (freeze item 7) | **Exhaustive: `\|S\| = N(N+1)/2`, no cap.** No MinAtar probe set. | Item 7 is half-written. Blocks step 9 (the diagnostics battery). |
-| 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`, 3 seeds per candidate** | Item 2 claims these are frozen; they exist nowhere. Blocks steps 5, 7, 8. |
+| 1 | Probe-set construction rule (freeze item 7) | **Exhaustive: `\|S\| = N(N+1)/2`, no cap.** No MinAtar probe set. | ✅ signed off; unblocks step 9 |
+| 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`** | ✅ signed off; unblocks steps 5, 7, 8 |
+| 3 | Per-candidate tuning seeds (freeze item 1) | **3 seeds × 2 development sizes** | ✅ signed off (surfaced by the item-2 audit) |
+
+The text is staged in `protocol/decisions/staged_stage3_protocol_fixes.md` and applied to
+`preregistration.md` at stage 3 — not now, because `prereg-draft` must stay a stable reference
+while the external pass runs. `hparam_search` has been added to `STREAM_NAMES` on main with a
+pinned-bytes test proving no already-derived seed moved.
 
 Both recommendations, with the arithmetic behind them, are in
 `protocol/decisions/staged_stage3_protocol_fixes.md`.
@@ -129,9 +134,10 @@ against the frozen documents rather than against intuition, all three failed:
   110 of that, leaving 40–140 for all tuning. On the MinAtar side, 240 runs ÷ 5 pilot seeds
   minus the 12-config `K_shared` sweep = 18 draws per tuning game, exactly.
 
-**A new gap surfaced from that audit:** the **per-candidate tuning seed count** is a value freeze
-item 1 should state and does not. It is now the only genuinely discretionary number left
-(3 recommended; 5 would force `n_backbone` down to 8).
+**A new gap surfaced from that audit and is also resolved:** the **per-candidate tuning seed
+count** is a value freeze item 1 should state and does not. Approved at **3 seeds** × 2
+development sizes = 6 runs per candidate, which puts the DeepSea development tier at 230 runs
+(110 cells + 120 tuning) inside its frozen 150–250 envelope.
 
 **One is a process action, and it is overdue:** the external methodological review was
 time-boxed, and the window has elapsed with no reviewer response on record. Under the freeze
@@ -147,14 +153,19 @@ and the pilot runs after the freeze. That ordering is intentional, not an oversi
 
 In order:
 
-1. **Answer the two decisions above** (minutes). Everything downstream is blocked on them.
-2. **Resolve the review window** — chase, substitute, or waive. Independent of 1, so start now.
+1. ~~Answer the two decisions.~~ **Done 2026-07-30.** The value block is cleared.
+2. **Resolve the review window** — chase, substitute, or waive. Independent of everything else
+   and overdue, so it should start immediately rather than queue behind the code.
 3. **Build the sweep driver** — the selection statistic exists; the thing that *runs* a search
-   and loops configurations does not. Needs decision 2's distributions.
-4. **Run the backbone tuning pass** — this finally produces the well-tuned DDQN baseline the
-   whole comparison rests on. First genuinely scientific result.
-5. **Finish steps 7–9** — mini-searches and the diagnostics battery.
+   and loops configurations does not. Now unblocked: distributions and `n_backbone = 12` are
+   settled and `hparam_search` exists.
+4. **Run the backbone tuning pass** — 12 candidates × 6 runs on DeepSea `N ∈ {10, 20}`. Produces
+   the well-tuned DDQN baseline the whole comparison rests on. **First genuinely scientific
+   result, and the first evidence that any of this learns well.**
+5. **Finish steps 7–9** — the two mini-searches and the diagnostics battery. Step 9 is now
+   simpler than planned: an exhaustive probe set needs no sampler and no `|S|` parameter.
 6. **Cut the final freeze tag**, apply the staged protocol fixes, mirror to OSF, then pilot.
 
-**The critical path is decisions 1 and 2, not code.** Roughly a day of implementation work is
-waiting on two numbers.
+**The critical path is now code plus one process action, and they are parallel.** Step 2 is pure
+calendar time; steps 3–5 are roughly a day of implementation that can proceed alongside it.
+Nothing is waiting on a decision any more.

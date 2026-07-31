@@ -126,7 +126,13 @@ STREAM_NAMES: tuple[str, ...] = (
     "eval_episodes",   # evaluation / rollout episode stochasticity
     "probe_set",       # frozen diagnostic probe-set generation
     "noisynet_diag",   # NoisyNet measurement-time diagnostic draws (M=30)
+    "hparam_search",   # random-search hyperparameter draws (freeze item 2)
 )
+
+# Note on ``probe_set``: under the approved item-7 rule the DeepSea probe set is the
+# *exhaustive* reachable set, so this stream is drawn ZERO times in the study as
+# pre-registered. It is retained so that sampling remains available without a protocol
+# amendment, and because removing a name is a versioned change while keeping one is free.
 
 # 0x1F (ASCII unit separator) delimits fields in the canonical payload. cell_id /
 # stream_name are ASCII tokens that never contain it, so serialization is injective.
