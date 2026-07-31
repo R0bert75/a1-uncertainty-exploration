@@ -160,7 +160,9 @@ class ValueSampleRecord:
         ``[S]`` array of state-visitation counts ``v(s)``. Diagnostic #5 regresses
         ``log σ(s, a*(s))`` on ``log(1 + v(s))``, so ``v`` must be captured *at the same
         checkpoint* as the samples — it cannot be reconstructed afterwards. Optional only
-        because the MinAtar analogue (#8) does not use it.
+        because the uniform-weighting primary (freeze item 7) does not use it; it is required
+        for the visitation-weighted secondary. Under exhaustive probe sets ``v`` is the run's
+        full state-visitation histogram.
     spec:
         The shape/provenance contract these samples satisfy.
     """
@@ -228,9 +230,11 @@ class ValueSampleWriter:
     budget contemplates. A sidecar JSON carries the spec so the tensor can be interpreted
     without loading it.
 
-    Storage cost is ``S × M × A × 4`` bytes per checkpoint. At ``|S| = 512``, ``M = 20``,
-    ``A = 6`` that is 246 KB per checkpoint — negligible against the replay buffer, which
-    is why persisting raw samples is affordable in the first place.
+    Storage cost is ``S × M × A × 4`` bytes per checkpoint. The battery is DeepSea-only (every
+    diagnostic references ``Q*``), where the probe set is the exhaustive reachable set,
+    ``|S| = N(N+1)/2``, and ``A = 2``. At the worst case ``N = 60``, ``M = 20`` that is 286 KB
+    per checkpoint, and ~1.35 GB for the whole default confirmatory sweep — negligible against
+    the replay buffer, which is why persisting raw samples is affordable in the first place.
     """
 
     def __init__(self, spec: SubstrateSpec) -> None:
