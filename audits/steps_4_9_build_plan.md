@@ -286,7 +286,7 @@ The nine frozen §3.3 diagnostics, against the tree:
 | 5 | Visitation-conditioned decay (OLS of log σ on log(1+v)) | missing |
 | 6 | Temporal persistence | **implemented** (`temporal_persistence.py`, both variants + samplers) |
 | 7 | Empirical containment (central 80 % interval) | missing |
-| 8 | MinAtar behavior-policy analogue — deterministic conditional (freeze item 20) | missing |
+| 8 | MinAtar behavior-policy analogue — deterministic conditional (freeze item 20) | **conditional RESOLVED → `full`** (2026-08-01); analogue itself still to write |
 | 9 | Undefined-value policy (NA, counted, published; σ = 0 substantive) | missing |
 
 Plus two structural pieces:
@@ -310,10 +310,29 @@ Plus two structural pieces:
 
   </details>
 
-- **Diagnostic 8 remains hard-blocked, and it is the only step-9 item that is.** Freeze item 20's
-  clone/restore conditional needs `MinAtarEnv` to expose state save/restore; grep finds no
-  `clone`/`get_state`/`set_state` in `src/minatar_env.py`, so the conditional cannot be evaluated in
-  any direction — including the direction that *drops* the analogue.
+- ~~**Diagnostic 8 remains hard-blocked**~~ **UNBLOCKED and RESOLVED 2026-08-01.** The block was
+  never in MinAtar — it was a missing adapter method. MinAtar's game state is plain attributes plus
+  a `RandomState`, so `MinAtarEnv.clone_state()` / `.restore_state()` now implement it, and
+  `analysis/clone_reproduction.py` runs item 20's decision procedure and writes an auditable record.
+  **Outcome: `full` probe rollouts** — 100/100 bit-exact on both tuning games
+  (`audits/item20_clone_reproduction*.json`). The fallback branch was evaluated too (fresh-reset
+  100/100) so the record shows both numbers. Diagnostic 8 itself is still to write, but it is now
+  ordinary work rather than a blocked item.
+
+  Two findings from doing it, both non-obvious enough to state:
+
+  1. **Item 20's stated test is necessary but not sufficient.** `Environment.seed()` aliases ONE
+     `RandomState` across the wrapper and the inner game. A `deepcopy` of the game splits it into
+     two generators; after that, the two replays item 20 prescribes match **each other 100/100**
+     while *neither* reproduces the pre-snapshot trajectory. Replay-vs-replay cannot see a restore
+     that is self-consistently wrong. The implementation therefore re-establishes the aliasing, and
+     the procedure requires `replay_1 == replay_2 == original`. Reporting `full` off the literal
+     test would have shipped a silently wrong appendix diagnostic.
+  2. **`last_action` is load-bearing but only ~8% detectable per test.** A stale sticky-action value
+     changes the trajectory in 16/200 40-step rollouts, so any single round-trip test misses it
+     ~92% of the time — pinned at the object level, with a cross-seed behavioural guard alongside.
+     This is incidentally the strongest argument for item 20's *100* tests being a count and not a
+     round number.
 
 ### Correction to a prior claim
 
@@ -322,8 +341,10 @@ first half stands: diagnostics 1–5 and 7 all reference `Q*` and are DeepSea-on
 probe-set size is specified anywhere. But **diagnostic 8 is a MinAtar clause**, via freeze item 20:
 100 clone/restore reproduction tests deciding between full probe rollouts, episode-start-only, or
 dropping the analogue. It is exploratory and appendix-only and must never be called "Q-error", but
-it is a required component of step 9. `src/minatar_env.py` has **no clone/restore/get_state
-support**, so the conditional cannot currently be evaluated in any direction.
+it is a required component of step 9. ~~`src/minatar_env.py` has **no clone/restore/get_state
+support**, so the conditional cannot currently be evaluated in any direction.~~ *(Resolved
+2026-08-01: `clone_state`/`restore_state` added; the conditional ran and returned `full`. See the
+diagnostic-8 entry above.)*
 
 ---
 

@@ -206,6 +206,93 @@ class MinAtarEnv(_BASE):
         return self._observation(), float(reward), bool(terminated), False, self._info()
 
     # ------------------------------------------------------------------ #
+    # State clone / restore (freeze item 20, diagnostic 8)
+    # ------------------------------------------------------------------ #
+    # Freeze item 20 makes the MinAtar behavior-policy analogue conditional on 100 bit-exact
+    # clone/restore reproduction tests. That conditional is only *evaluable* if the adapter can
+    # snapshot and restore state at all, so the capability is a protocol requirement, not a
+    # convenience. See ``analysis/clone_reproduction.py`` for the test procedure itself.
+    #
+    # MinAtar keeps simulator state in four places: the inner game object, the RNG,
+    # ``Environment.last_action`` (the action a sticky repeat replays), and this adapter's
+    # episode-finished flag. Snapshotting the inner game ALONE reproduces only ~4/100 rollouts,
+    # so the wrapper-level pieces are load-bearing, not incidental.
+    #
+    # THE SUBTLE PART — RNG ALIASING. ``Environment.seed()`` does
+    # ``self.random = RandomState(s); self.env.random = self.random``: wrapper and game share
+    # ONE generator object, and the sticky-action coin flip in ``Environment.act()`` draws from
+    # the same stream the game's own dynamics draw from. A naive ``deepcopy(self._env.env)``
+    # copies that generator, so after restore the two hold SEPARATE generators and the single
+    # interleaved stream becomes two independent ones.
+    #
+    # That failure is invisible to item 20's stated test. Two replays from a de-aliased
+    # snapshot still match EACH OTHER perfectly (both are wrong in the same way) — measured
+    # 100/100 — while neither reproduces the pre-snapshot trajectory. Restoring therefore
+    # re-establishes the aliasing explicitly and seeds the shared generator once, and
+    # ``analysis/clone_reproduction.py`` compares replays against the ORIGINAL rollout in
+    # addition to each other, which is the check that actually detects this.
+
+    def clone_state(self) -> dict:
+        """Snapshot the full simulator state; see :meth:`restore_state`.
+
+        Returns a deep-copied, self-contained dict — safe to hold across further stepping,
+        and never aliased to live env internals. The RNG is captured once, as a state tuple,
+        because wrapper and game share a single generator (see the note above).
+        """
+        import copy as _copy
+
+        game = self._env.env
+        rng_aliased = self._env.random is getattr(game, "random", None)
+        # Detach the generator before copying so the snapshot holds no generator object at all;
+        # the position is captured separately as an explicit state tuple.
+        saved = getattr(game, "random", None)
+        try:
+            if hasattr(game, "random"):
+                game.random = None
+            game_copy = _copy.deepcopy(game)
+        finally:
+            if saved is not None:
+                game.random = saved
+
+        snap = {
+            "game": game_copy,
+            "rng": self._env.random.get_state(),
+            "rng_aliased": rng_aliased,
+            "last_action": self._env.last_action,
+            "done": bool(self._done),
+        }
+        if not rng_aliased:  # defensive: an unseeded env can hold two distinct generators
+            snap["game_rng"] = saved.get_state() if saved is not None else None
+        return snap
+
+    def restore_state(self, snapshot: dict) -> None:
+        """Restore a :meth:`clone_state` snapshot in place.
+
+        The snapshot is deep-copied on the way out as well as in, so one snapshot can seed many
+        replays (item 20 replays each twice; probe rollouts would replay far more).
+        """
+        import copy as _copy
+
+        missing = {"game", "rng", "rng_aliased", "last_action", "done"} - set(snapshot)
+        if missing:
+            raise ValueError(f"snapshot missing required key(s): {sorted(missing)}")
+
+        game = _copy.deepcopy(snapshot["game"])
+        self._env.random.set_state(snapshot["rng"])
+        if snapshot["rng_aliased"]:
+            # Re-establish MinAtar's shared-generator invariant. Without this the restored env
+            # runs two independent streams where the original ran one.
+            game.random = self._env.random
+        else:
+            game_rng = np.random.RandomState()
+            if snapshot.get("game_rng") is not None:
+                game_rng.set_state(snapshot["game_rng"])
+            game.random = game_rng
+        self._env.env = game
+        self._env.last_action = snapshot["last_action"]
+        self._done = bool(snapshot["done"])
+
+    # ------------------------------------------------------------------ #
     # Convenience
     # ------------------------------------------------------------------ #
     @property

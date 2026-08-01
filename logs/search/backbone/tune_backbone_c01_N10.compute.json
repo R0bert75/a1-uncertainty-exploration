@@ -1,0 +1,14 @@
+{
+  "cell_id": "tune|backbone",
+  "config_sha256": "9aa5353a453ca4f2c18c911bc9aef4dc739cc895e4b75351eed651aa9bb20b73",
+  "env": "deep_sea",
+  "method": "ddqn_egreedy",
+  "per_seed_wall_clock_s": {
+    "0": 444.867,
+    "1": 444.947,
+    "2": 405.096
+  },
+  "run_id": "tune_backbone_c01_N10",
+  "total_env_steps": 60000,
+  "total_wall_clock_s": 1294.91
+}

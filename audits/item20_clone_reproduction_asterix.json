@@ -1,0 +1,10 @@
+{
+  "game": "asterix",
+  "decision": "full",
+  "clone_bit_exact": 100,
+  "clone_tests": 100,
+  "fresh_reset_bit_exact": 100,
+  "fresh_reset_tests": 100,
+  "rollout_steps": 40,
+  "rationale": "all 100 clone/restore reproduction tests bit-exact -> full probe rollouts"
+}
