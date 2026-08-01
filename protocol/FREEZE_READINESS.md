@@ -7,6 +7,22 @@
 > is now an *owner action that is overdue*, not a window to wait out. Gates 2 and 3 are
 > unchanged. The body below is the 2026-07-23 assessment and is kept for provenance.
 
+> **Waiver deadline 2026-08-01.** The substitute-reviewer deadline (~2026-08-05) is now **4
+> days away**. No substitute or waiver is recorded in `protocol/`. If neither has been
+> arranged before ~2026-08-05, the next step under item 18 is a **documented waiver** — a
+> written record in `protocol/` stating that the silence path was followed per the frozen
+> procedure. This is a valid, pre-registered outcome; it is not a shortcut. The final freeze
+> tag cannot be cut until this record exists.
+
+> **External review received 2026-08-01.** A full methodological review was received (see
+> `protocol/decisions/staged_stage3_protocol_fixes.md` Fix #4–#6). Three additional staged
+> items arise from it: Fix #4 (exact tuning-objective formulation, backbone sweep N=20
+> caveat), Fix #5 (three probe-set detail freezes), Fix #6 (Diagnostic 8 MinAtar
+> state-selection rule). Fixes #5 and #6 need owner sign-off before stage 3. Fix #4's
+> exact formulation is staged and ready for review. The reviewer also noted that the final
+> freeze candidate should be presented as an explicit diff against `prereg-draft` — see the
+> staging note in Fix #4.
+
 > **Missing-values update 2026-07-30 — CLOSED.** A pre-freeze audit found that two freeze-list
 > items claimed values the draft did not actually contain (item 7 probe-set construction, item 2
 > search distributions/budget), and a third defect surfaced from auditing the second (item 1 has
@@ -27,6 +43,12 @@
 > development budget should note the 240-run composition (120 cell + 120 tuning; the cell figure
 > was corrected from 110 on 2026-08-01 — the ε-greedy DDQN reference is an eleventh arm, not one
 > of the ten factorial cells).
+>
+> **External review additions (2026-08-01):** Three further fixes are staged (Fix #4 exact
+> formulation, Fix #5 probe-set details, Fix #6 Diagnostic 8 state selection). The backbone
+> sweep completed on 2026-08-01 with a substantive caveat: all 12 candidates scored 0/3
+> discovery at N=20, so the selected backbone (c01) was chosen on the N=10 stratum alone.
+> This must appear in any cross-size claim and in the stage-3 protocol application.
 >
 > **Consequence for this document's verdict: unchanged.** The missing values were never one of
 > the three gates. Gates 1–3 below are still the binding constraints, and all three remain
