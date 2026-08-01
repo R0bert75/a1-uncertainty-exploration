@@ -1,4 +1,122 @@
 {
-  "status": "no_contrasts_registered",
-  "note": "CONTRAST_REGISTRY is filled at protocol freeze (Session 1)."
+  "contrasts": {
+    "C-COHERENCE": [
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K10",
+          "per_step|off|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|on|K10",
+          "per_step|on|K10"
+        ],
+        "status": "pass"
+      }
+    ],
+    "C-K": [
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K5",
+          "episodic|off|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K10",
+          "episodic|off|K20"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|on|K5",
+          "episodic|on|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|on|K10",
+          "episodic|on|K20"
+        ],
+        "status": "pass"
+      }
+    ],
+    "C-PRIOR": [
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K10",
+          "episodic|on|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "per_step|off|K10",
+          "per_step|on|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "ensemble_mean|off|K10",
+          "ensemble_mean|on|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K5",
+          "episodic|on|K5"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K20",
+          "episodic|on|K20"
+        ],
+        "status": "pass"
+      }
+    ],
+    "C-USE": [
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|off|K10",
+          "ensemble_mean|off|K10"
+        ],
+        "status": "pass"
+      },
+      {
+        "illicit_diffs": {},
+        "pair": [
+          "episodic|on|K10",
+          "ensemble_mean|on|K10"
+        ],
+        "status": "pass"
+      }
+    ]
+  },
+  "mode": "configs",
+  "n_fail": 0,
+  "n_pass": 13,
+  "n_skipped": 0,
+  "source": "configs",
+  "status": "audited"
 }

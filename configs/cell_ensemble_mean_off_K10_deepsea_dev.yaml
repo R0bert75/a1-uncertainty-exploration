@@ -1,0 +1,41 @@
+# Part-A development cell — ensemble_mean off K10 (bdqn)
+#
+# Part-A switchboard cell ensemble_mean|off|K10 of the 10-cell structured partial factorial
+# (freeze item 12). Development role: backbone numbers are the shared class-1
+# placeholders and are superseded by the backbone-tuning pass (freeze item 2).
+# Class-3 rule: ONLY the varied factor's own parameters may differ from the
+# canonical cell — this file is audited by audits/c13_audit.py.
+# C-USE comparator: capacity-matched ensemble-mean e-greedy. This use_rule is the ONLY
+# one that consumes an eps schedule (its own factor-specific parameter, freeze item 2).
+run_id: cell_ensemble_mean_off_K10_deepsea_dev
+role: development
+part: A
+method: bdqn
+env: deep_sea
+master_seed: 0
+use_rule: ensemble_mean
+prior: 'off'
+K: 10
+arm: ensemble_mean|off|K10
+backbone:
+  lr: 0.0005
+  batch_size: 32
+  gamma: 0.99
+ensemble_shared:
+  mask_prob: 0.5
+  head_loss_agg: grad_norm_1_over_k
+factor_specific:
+  prior_scale: null
+  eps_schedule:
+    eps_start: 1.0
+    eps_end: 0.05
+    eps_decay_steps: 3000
+env_budget:
+  deep_sea_size: 30
+  episodes: 2000
+seeds:
+- 0
+- 1
+- 2
+- 3
+- 4

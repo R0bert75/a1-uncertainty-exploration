@@ -76,4 +76,7 @@ jobs:
         run: PYTHONPATH=. python audits/config_schema_check.py --configs configs
 
       - name: C13 audit
-        run: python audits/c13_audit.py --configs logs --out audits/c13
+        # --mode configs audits the COMMITTED cell configs, so a class-3 violation between
+        # two contrast arms fails at commit time. The old `--configs logs` invocation found
+        # no resolved_config.json in a clean checkout and so passed vacuously.
+        run: PYTHONPATH=. python audits/c13_audit.py --configs configs --mode configs --out audits/c13

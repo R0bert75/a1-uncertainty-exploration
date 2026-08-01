@@ -36,8 +36,11 @@ $(LOGS)/dummy_smoke.csv:
 schema:  ## Assert every committed config resolves under the frozen schema (spec §4)
 	PYTHONPATH=. python audits/config_schema_check.py --configs configs
 
-audit:  ## Run the C13 configuration-identity audit
-	$(PYTHON) audits/c13_audit.py --configs $(LOGS) --out audits/c13
+audit:  ## Run the C13 configuration-identity audit over the committed cell configs
+	PYTHONPATH=. $(PYTHON) audits/c13_audit.py --configs configs --mode configs --out audits/c13
+
+audit-runs:  ## Run C13 over executed runs' resolved_config.json (Session 4+; needs runs)
+	PYTHONPATH=. $(PYTHON) audits/c13_audit.py --configs $(LOGS) --mode runs --out audits/c13
 
 ci-parity:  ## Run the workflow's inline assertion steps locally (they are not in pytest)
 	PYTHONPATH=. python audits/ci_parity_check.py
