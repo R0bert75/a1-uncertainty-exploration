@@ -17,8 +17,8 @@ below is an absent symbol or absent config, not an impression.
 | 5. Switchboard + backbone tuning + disagreement | 4 | 4 | ~~none — all four closed 2026-08-01~~ (see §5; the row as first written said "6 of 10 cells", the true count was 8 of 10) |
 | 6. DeepSea dev sizes + solve-vs-depth | 2 | 1 | figure; needs step-5 runs first |
 | 7. Priors + `prior_scale` mini-search | 2 | 1 | mini-search (reuses step-5 driver) |
-| 8. NoisyNet + `eps_schedule` mini-search | 3 | 1 | mini-search **+ its objective's input cell does not exist** |
-| 9. RQ2-Q battery | 10 | 3 | 6 of 9 diagnostics; trainer never calls the substrate |
+| 8. NoisyNet + `eps_schedule` mini-search | 3 | 2 | mini-search driver only — ~~its objective's input cell does not exist~~ **that cell was committed at `b0f63ef`; this row was stale** |
+| 9. RQ2-Q battery | 10 | 4 | 6 of 9 diagnostics; #8 needs MinAtar clone/restore; ~~trainer never calls the substrate~~ **wired at `0d6df0b`; this row was stale** |
 
 **One artefact unblocks four steps.** Steps 5, 7, 8 and (transitively) 6 all wait on a single
 missing module: something that takes a config template plus a parameter grid, runs the cells, and
@@ -231,10 +231,23 @@ step is nearly free. Its input cell `(episodic, on, 10)` is one of the two that 
 
 ## Step 8 — NoisyNet + `eps_schedule` mini-search
 
+> **CORRECTED 2026-08-01.** The "blocked harder than step 7" claim below is **no longer true and
+> its reasoning was also incomplete**. `configs/cell_ensemble_mean_off_K10_deepsea_dev.yaml` was
+> committed at `b0f63ef`, so the objective's input population exists and steps 7 and 8 are now
+> **symmetric** — each needs only the `n_mini = 4` class-3 driver. Separately, the entry said this
+> step's objective "is pinned"; Gap 4 later established that the `(mean_eps, off, 10)` clause names
+> a cell and a size set but **never an outcome**, exactly like the backbone clause — so its
+> objective was *not* pinned either, and it is the Gap 4 discovery-AUC sub-clause that supplies one.
+
+<details>
+<summary>Original entry as first written (2026-07-31)</summary>
+
 NoisyNet is implemented with its own arm string. This step is blocked **harder than step 7**: its
 pinned objective is "IQM of `(mean_eps, off, 10)` on development sizes", and per 5d that cell has no
 config. The objective's input population does not exist. Fixing 5d is a prerequisite, not a parallel
 task.
+
+</details>
 
 ---
 
@@ -258,10 +271,27 @@ Plus two structural pieces:
 
 - **`q_star` — done and validated.** `tests/test_deep_sea.py` checks it against brute-force
   enumeration, satisfying "Q* validated on hand-checkable N".
-- **The substrate is never called.** `src/diagnostics/substrate.py` exists and is cap-agnostic, but
-  grep finds no reference to it in `trainer.py`. Nothing collects `{Q_m(s,a)}` samples during a run,
-  so no diagnostic can be computed even once written. **Wiring the substrate into the checkpoint
-  path is the first step-9 task**, and it depends on 5c (disagreement logging) touching the same code.
+- ~~**The substrate is never called.**~~ **DONE 2026-08-01 (`0d6df0b`).** As predicted, this landed
+  with 5c on the shared code path: `trainer.py` imports `diagnostics.recorder`, builds one per run
+  under `--diagnostics`, calls `observe_state(obs)` each step for the visitation counts diagnostic
+  #5 needs, and `record(step)` at every checkpoint. `{Q_m(s,a)}` is now collected, so the six
+  missing diagnostics are **pure post-hoc analysis over committed `.npz` files** — none of them
+  requires another training run or another trainer change. That is the main thing this table
+  understates: the remaining step-9 work no longer touches the run path at all.
+
+  <details><summary>Original entry (2026-07-31)</summary>
+
+  `src/diagnostics/substrate.py` exists and is cap-agnostic, but grep finds no reference to it in
+  `trainer.py`. Nothing collects `{Q_m(s,a)}` samples during a run, so no diagnostic can be computed
+  even once written. **Wiring the substrate into the checkpoint path is the first step-9 task**, and
+  it depends on 5c (disagreement logging) touching the same code.
+
+  </details>
+
+- **Diagnostic 8 remains hard-blocked, and it is the only step-9 item that is.** Freeze item 20's
+  clone/restore conditional needs `MinAtarEnv` to expose state save/restore; grep finds no
+  `clone`/`get_state`/`set_state` in `src/minatar_env.py`, so the conditional cannot be evaluated in
+  any direction — including the direction that *drops* the analogue.
 
 ### Correction to a prior claim
 
@@ -293,11 +323,36 @@ the 150–250 envelope but with 10 runs of slack rather than 20.
 
 ## Recommended order
 
+> **Superseded 2026-08-01 — items 1–5 are all done** (`ce383ff` closes the last of them). Current
+> order below; the original is kept underneath because the ordering *rationale* still holds.
+
+**Setup (code) is complete for steps 5, 7 and 8 except one shared driver, and for step 9 except
+post-hoc analysis. Nothing further is blocked on a decision.** What remains:
+
+1. **Run the backbone tuning pass** — `make search-backbone`, 72 runs. Compute, not code. Produces
+   the tuned DDQN backbone every later comparison is defined against, so it gates 6, 7 and 8.
+2. **Generalize the driver to the two class-3 mini-searches** (`n_mini = 4`, one varied parameter
+   each) — steps 7 and 8, now symmetric. Small: the sampling, scoring, tie-break and record
+   machinery all already exist; what is missing is a one-parameter entry point and the two
+   objectives' input cells, which are committed.
+3. **Step 6's solve-vs-depth figure** — needs the runs from (1), must carry a "pilot" label.
+4. **Step 9's six missing diagnostics** — pure post-hoc analysis over the committed `.npz` files;
+   no trainer change, no extra runs. Diagnostic 1 (marginal alignment) is the RQ2-L primary and
+   should come first.
+5. **MinAtar clone/restore** — the one genuinely missing *capability* in the tree, and the only
+   hard blocker left. Needed to evaluate freeze item 20's conditional in any direction.
+6. **Cut the final freeze tag**, land the staged protocol fixes, mirror to OSF, then pilot.
+
+<details>
+<summary>Original order as first written (2026-07-31) — all five items now complete</summary>
+
 1. **Run step 4** on DeepSea N=10 — cheapest, and unblocks both compute triggers.
 2. **Add the 6 missing cell configs** (5d) — pure YAML + schema check; unblocks step 8's objective.
 3. **Stage the tuning-objective gap** (5b) as staged fix #4; get sign-off on discovery-AUC.
 4. **Build the sweep driver** (5a) — the one artefact four steps wait on.
 5. **Disagreement logging + substrate wiring** (5c + step 9 structural) — same code path.
+
+</details>
 6. **Run the backbone tuning pass**, then steps 7 and 8's mini-searches, then step 6's figure.
 7. **Diagnostics 1–5, 7, 9**, then the item-20 clone conditional (8).
 
