@@ -14,10 +14,12 @@ the next section for why the sign-off does not license an edit today.
 | 7 — probe set | Exhaustive, `\|S\| = N(N+1)/2`, no cap; no MinAtar probe set | approved |
 | 2 — search budget | `n_backbone = 12`, `n_mini = 4` (each of two) | approved |
 | 1 — seed counts | **3 seeds per tuning candidate** (new sub-clause, see Gap 3) | approved |
-| 2 — backbone search *objective* | **IQM of per-seed discovery-curve AUC** (new sub-clause, see Gap 4) | **open — needs sign-off** |
+| 2 — backbone search *objective* | **IQM of per-seed discovery-curve AUC** (new sub-clause, see Gap 4) | ✅ approved 2026-08-01; extended by Fix #4 (exact formulation + tie-breaker + N=20 caveat) |
 
-**One item is not yet approved.** Gap 4 was surfaced on 2026-07-31, after the sign-off above, by
-the steps 4–9 build audit. It blocks the sweep driver (spec §8 step 5a) and nothing else.
+**All five gaps are now owner-decided.** Gap 4 was surfaced on 2026-07-31 and owner-approved
+2026-08-01 (discovery AUC). Fix #4 (2026-08-01, from external reviewer) extends Gap 4 with the
+exact mathematical formulation, tie-breaker cascade, and N=20 zero-stratum disclosure.
+Fixes #5 and #6 (2026-08-01, from external reviewer) are staged and **require owner sign-off**.
 
 ## Why this file exists instead of an edit to `preregistration.md`
 
@@ -514,6 +516,207 @@ run, so it had to land before the sweep, not after.
 
 ---
 
+## Fix #4 — Backbone tuning objective: exact formulation (external review feedback, 2026-08-01)
+
+**Incorporates: external reviewer feedback 2026-08-01. Owner sign-off required before this is
+applied at stage 3.**
+
+The external reviewer confirmed that the Gap 4 sub-clause (owner-decided 2026-08-01) is
+correct in its discovery-AUC choice, but identified three further requirements before the text
+is complete:
+
+1. **The exact per-run quantity must be defined mathematically**, not just named.
+2. **A tie-breaker cascade must be specified** (even at 3–11% tie rate, any tie that occurs
+   must resolve mechanically, not by researcher judgment post-results).
+3. **The N=20 zero-stratum situation must be documented** — this is no longer hypothetical.
+   The completed backbone sweep (2026-08-01, `logs/search/backbone/search_record.json`) showed
+   all 12 candidates returning 0/3 discovery at N=20. The winner (c01) was therefore selected
+   on the N=10 stratum alone.
+4. **The sub-clause must cover all three searches**, not just the backbone (Gap 4 already
+   resolved this; the reviewer confirmed the same pathology applies to both class-3 searches).
+
+### Proposed replacement sub-clause for item 2 (supersedes the sub-clause in Gap 4 above)
+
+> **Search objective (all pre-registered searches).** The selection objective for the class-1
+> backbone search and for both class-3 mini-searches is defined as follows.
+>
+> **Per-run score.** For a run r with budget B_N and cumulative first-discovery indicator
+> D_r(t) = 1(T_r ≤ t), the normalized discovery AUC is:
+>
+>     A_r = (1/B_N) ∫₀^{B_N} D_r(t) dt
+>
+> In the discrete checkpoint case (C checkpoints at equal spacing):
+>
+>     A_r = (1 − j/C)  if discovery occurs at checkpoint j  (j ∈ {1, …, C})
+>     A_r = 0           if no discovery occurs within the budget
+>
+> where j is the index of the first checkpoint at which `discovery_prob = 1`. Earlier discovery
+> yields a higher score; a run that never discovers scores 0. This is equivalent to (1 − T_r /
+> B_N) normalized to [0, 1], which is a direct measure of sample efficiency.
+>
+> **Candidate score.** The candidate score is the IQM of {A_r} over the six development runs
+> (3 seeds × 2 development sizes). Both sizes contribute exactly three runs each; because the
+> per-run scores are normalized to [0, 1] and the counts are equal, this is already
+> stratum-balanced without an explicit weighting step.
+>
+> **Tie-breaker cascade.** If two candidates share the same IQM to floating-point precision:
+> (1) higher terminal discovery rate (fraction of the 6 runs with T_r ≤ B_N); (2) lower
+> primary hyperparameter value (the varied parameter for class-3 searches; frozen candidate
+> index for the class-1 backbone search, whose parameters have no natural order). This cascade
+> is purely mechanical and requires no researcher judgment after results are observed.
+>
+> **Zero-stratum behaviour.** If all runs at one development size score 0 (no discovery in any
+> of the three seeds at that size), the pooled IQM is computed over the full six-run vector as
+> stated; the uninformative stratum contributes zeros and does not receive special treatment.
+> This situation occurred in the completed backbone sweep (N=20, all 12 candidates, 0/3
+> discovery), so the selected backbone configuration (c01: lr=6.054e-4, batch_size=128,
+> hidden_width=64, target_update_period=100; IQM=0.1583) was chosen on the N=10 stratum alone.
+> This is a substantive caveat: any cross-size comparison built on this backbone should note
+> that the backbone was never observed to discover the goal at N=20 during tuning. The selection
+> rule is unchanged; this note is disclosure, not a correction.
+>
+> **What this objective is not.** This is a selection input, not a reported estimand. The
+> primary outcome for all reported results remains terminal discovery probability (§1.1),
+> unchanged. The tuning objective must not be used as a confirmatory outcome or as a diagnostic
+> input — doing so would partially optimize the estimator against the quantity it is later used
+> to study (§3.3 uncertainty diagnostics reference the same logs).
+
+### Reviewer's staging note
+
+The reviewer noted that staged fixes must not become a hidden intermediate layer that an
+external reviewer never saw. **Fix #4 is a methodological decision, not a typo fix**, and the
+final freeze candidate should be presented to whoever closes Gate 1 (substitute reviewer or
+waiver process) as the explicit composite:
+
+    prereg-draft (38db441)
+    + staged fixes #1–#6
+    = candidate final preregistration
+
+Before cutting the final tag, this diff should be disclosed as a formal erratum against
+`prereg-draft`, so that the Gate-1 record shows the reviewer (or waiver) was shown the full
+candidate text, not just the original draft.
+
+---
+
+## Fix #5 — Probe-set details: three quantities not frozen (external review feedback, 2026-08-01)
+
+**Incorporates: external reviewer feedback 2026-08-01. Owner sign-off required.**
+
+The reviewer identified three probe-set details that are not explicitly frozen anywhere in the
+current documents, despite being load-bearing for the §3.3 diagnostic battery:
+
+### The three unresolved details
+
+**5a. Terminal-state inclusion.** DeepSea's reachable lower-left triangle includes the
+goal cell (row N−1, col N−1). It is a terminal state: the episode ends on entering it, no
+action is taken from it, and Q*(s_terminal, a) = r_terminal / (1−γ) for all a under
+standard conventions. The diagnostic battery applies Q*-based alignment measures over S; the
+question is whether s_terminal ∈ S and whether the alignment is meaningful there (where the
+agent has no policy to observe). **Must be decided before `analysis/diagnostics_battery.py` is
+run on real data.**
+
+**5b. S × A scope.** Six diagnostics (marginal alignment, action-gap alignment,
+incorrect-argmax rank, empirical containment, optimal-path σ, visitation-conditioned decay)
+compute a statistic over pairs (s, a). DeepSea's branching factor is 2 at every non-terminal
+state (left/right), but the action space has A=2 regardless of state. The question is whether
+diagnostics iterate over all (s, a) with s ∈ S, or only over (s, a*) where a* = argmax Q*(s),
+or only over reachable (s, a) pairs (excluding actions that transition outside the grid). This
+determines |S × A| and the interpretation of every alignment coefficient.
+
+**5c. Q* mapped to the run's action permutation.** DeepSea's action labels (0/1 = left/right)
+are assigned by a per-run permutation drawn from the `env_mapping` stream and stored as a hash
+in the run record. The brute-force Q* solver produces Q* values indexed by the solver's own
+action ordering, not necessarily by the run's permutation. If the hash is not stored alongside
+the diagnostic data and the mapping is not applied, Q*-based alignment diagnostics silently
+compute Spearman ρ between the model's value-function ordering and the *wrong* Q* column.
+Given the cell-specific RNG derivation scheme, this is a real risk: the per-run action
+mapping is non-trivial across cells.
+
+### Proposed additions to item 7 (to be staged and applied at stage 3)
+
+> **Probe-set details (three frozen quantities for the §3.3 battery).**
+>
+> (a) **Terminal states:** s_terminal is **excluded** from the probe set. The agent takes no
+> action from s_terminal (the episode terminates before the policy is queried), so σ(s,a) is
+> not defined there and Q*-alignment diagnostics have no behavioral referent. The probe set is
+> the strictly non-terminal reachable states: S = {(row, col) : row + col < N−1}, giving
+> |S| = N(N+1)/2 − 1 states. (The exhaustive-enumeration rule in Gap 1 is otherwise
+> unchanged; this clarification reduces |S| by one entry per size.)
+>
+> (b) **S × A scope:** diagnostics iterate over **all (s, a) pairs with s ∈ S and a ∈ {0,1}**
+> (full Cartesian product, both actions per state). This is the natural scope for a measure
+> of uncertainty quality: the diagnostic asks whether the model's uncertainty is well-calibrated
+> globally, not just along the optimal path.
+>
+> (c) **Action-mapping provenance:** the `env_mapping` hash stored in the run's
+> `resolved_config.json` is recorded alongside every diagnostic output file. Before computing
+> any Q*-based alignment statistic, the diagnostic driver reads the hash, retrieves the
+> permutation from the run's `env_mapping` stream seed, and applies it to index into Q*
+> correctly. A guard assertion checks that the loaded Q* array's argmax pattern matches the
+> permuted reference before any correlation is computed.
+
+---
+
+## Fix #6 — Diagnostic 8: MinAtar state-selection rule unresolved (external review feedback, 2026-08-01)
+
+**Incorporates: external reviewer feedback 2026-08-01. Owner sign-off required.**
+
+The reviewer identified a gap that was created by resolving a different gap. Freeze item 20's
+conditional (which MinAtar Diagnostic 8 probe-rollout variant to run) was resolved to "full
+probe rollouts" at commit `288834b`. The `MinAtarEnv.clone_state()` / `.restore_state()`
+implementation that unblocked it is committed and tested. But:
+
+**Closing "which variant" did not close "from which states."**
+
+Diagnostic 8 is the MinAtar behavior-policy analogue: 100 clone/restore reproduction tests
+whose outcome decides between full probe rollouts, episode-start-only, or dropping the
+analogue. "Full probe rollouts" means: restore a state, roll out the behavior policy, measure
+whether the trajectory is bit-exact. But which states are restored? The item-20 conditional
+names the variant; it says nothing about the state population.
+
+At the time item 20 was written, MinAtar was known to have no clone/restore. Now that it does,
+the state-selection question surfaces as a genuine open item that was never asked.
+
+### The unresolved question
+
+Candidate state populations for Diagnostic 8:
+
+- **On-policy encountered states**: states visited during a training run, sampled from the
+  replay buffer or a logged trajectory snapshot. Depends on the policy; varies across seeds and
+  checkpoints.
+- **Episode-start states**: states at the beginning of each episode (`env.reset()`). For
+  MinAtar these are fully deterministic given the seed, so they are reproducible.
+- **Fixed evaluation trajectories**: a frozen set of (env, seed) pairs that define starting
+  configurations, evaluated by rolling out the behavior policy from each.
+- **Uniform snapshots at fixed step intervals**: save every K steps during training, restore
+  and roll out from each.
+
+The choice determines what "full probe rollouts" means in practice, how reproducible the
+diagnostic is across implementations, and how it relates to the DeepSea probe set (which
+is exhaustive over reachable states).
+
+### Status
+
+**This fix requires owner decision before Diagnostic 8 is implemented.** The implementation
+in `src/diagnostics/` should not begin until the state-selection rule is written here and
+signed off. The recommended approach, consistent with the spirit of the DeepSea battery
+(exhaustive where feasible, probe-set-stream governed otherwise), is:
+
+> **Diagnostic 8 state population:** episode-start states from the first 100 distinct seeds
+> applied to the MinAtar `env.reset()` call, drawn from the `probe_set` stream. This is
+> reproducible, independent of any learned policy, and directly analogous to the DeepSea
+> probe set's goal of sampling the reachable state distribution representatively. The 100
+> rollouts mandated by item 20 correspond to these 100 states.
+
+**Owner decision needed: accept this recommendation, or choose a different state population
+and document the rationale here before implementation begins.**
+
+---
+
+
+
+---
+
 ## Recommended sequence
 
 1. ~~Owner signs off on the corrected recommendations.~~ **DONE 2026-07-30 — approved.** For the
@@ -532,7 +735,7 @@ run, so it had to land before the sweep, not after.
    `n_backbone` down to 8), which freeze item 1 should state and currently does not.
 2. Send both gaps to the reviewer as an **erratum against `prereg-draft`** — they are missing
    stage-1 values, and disclosing them is cheaper than having the reviewer find them.
-3. At stage 3, apply **all five** gap texts to `preregistration.md`, add the `hparam_search`
+3. At stage 3, apply **all six** gap texts to `preregistration.md` (Gaps 1–5 plus Fix #4's extended formulation; Fixes #5 and #6 once owner sign-off received), add the `hparam_search`
    stream, and cut the final tag + OSF mirror. (Gap 5 amends item 5's wording rather than filling
    a blank — it must not be applied as a pure insertion.)
 
