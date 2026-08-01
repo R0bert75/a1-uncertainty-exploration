@@ -158,12 +158,16 @@ In order:
 1. ~~Answer the two decisions.~~ **Done 2026-07-30.** The value block is cleared.
 2. **Resolve the review window** — chase, substitute, or waive. Independent of everything else
    and overdue, so it should start immediately rather than queue behind the code.
-3. **Build the sweep driver** — the selection statistic exists; the thing that *runs* a search
-   and loops configurations does not. Now unblocked: distributions and `n_backbone = 12` are
-   settled and `hparam_search` exists.
+3. ~~Build the sweep driver.~~ **Done 2026-08-01.** `src/search.py` — `make search-dry` prints the
+   frozen 12-candidate field, `make search-backbone` runs the pass. Step 5 is now complete: all
+   four of its gaps (driver, tuning objective, disagreement logging, missing cells) are closed.
 4. **Run the backbone tuning pass** — 12 candidates × 6 runs on DeepSea `N ∈ {10, 20}`. Produces
    the well-tuned DDQN baseline the whole comparison rests on. **First genuinely scientific
-   result, and the first evidence that any of this learns well.**
+   result, and the first evidence that any of this learns well.** Now the top code item: it is
+   compute, not implementation. One caution before launching it — the tuning objective (Gap 4,
+   discovery AUC) is *staged*, not yet written into the pre-registration, and the pre-registration
+   is frozen pending the review window. Running the search before that lands is fine; **reporting**
+   a selected backbone before it lands is what would make the objective look post-hoc.
 5. **Finish steps 7–9** — the two mini-searches and the diagnostics battery. Step 9 is now
    simpler than planned: an exhaustive probe set needs no sampler and no `|S|` parameter.
 6. **Cut the final freeze tag**, apply the staged protocol fixes, mirror to OSF, then pilot.

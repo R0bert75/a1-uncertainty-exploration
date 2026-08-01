@@ -42,6 +42,13 @@ audit:  ## Run the C13 configuration-identity audit over the committed cell conf
 audit-runs:  ## Run C13 over executed runs' resolved_config.json (Session 4+; needs runs)
 	PYTHONPATH=. $(PYTHON) audits/c13_audit.py --configs $(LOGS) --mode runs --out audits/c13
 
+search-dry:  ## Print the pre-registered class-1 backbone candidate field (no runs)
+	PYTHONPATH=. $(PYTHON) -m src.search --dry-run
+
+search-backbone:  ## Run the class-1 backbone search: 12 candidates x 3 seeds x 2 sizes = 72 runs
+	PYTHONPATH=. $(PYTHON) -m src.search --out $(LOGS)/search/backbone \
+		--record $(LOGS)/search/backbone/search_record.json
+
 ci-parity:  ## Run the workflow's inline assertion steps locally (they are not in pytest)
 	PYTHONPATH=. python audits/ci_parity_check.py
 

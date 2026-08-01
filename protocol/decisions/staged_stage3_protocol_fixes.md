@@ -316,20 +316,41 @@ No other frozen count moves.
 
 ---
 
-## Gap 4 — Freeze item 2: the backbone search names no objective *metric*
+## Gap 4 — Freeze item 2: no search names its objective *outcome*
 
 **Surfaced 2026-07-31 by the steps 4–9 build audit (`audits/steps_4_9_build_plan.md`).**
-Status: **open, needs owner sign-off before the search runs.**
+**Scope corrected and resolved 2026-08-01 (owner-decided).**
+Status: **approved, staged, not yet applied.**
+
+**Owner decision (2026-08-01): discovery AUC, applied to all three searches.** The proposed
+sub-clause below is the text to apply at stage 3. Rationale and the evidence behind it follow.
 
 ### The defect
 
-Freeze item 2 pins a full objective for both class-3 mini-searches — `prior_scale` by "IQM of the
-canonical prior-on cell `(episodic, on, 10)` on development sizes", `eps_schedule` by "IQM of
-`(mean_eps, off, 10)`" — and item 3 pins the statistic (IQM) and tie-break (lower parameter value)
-"throughout". **For the class-1 backbone search it names no metric.** IQM is a reduction; IQM *of
-what* is not stated. Two candidates could be ranked by terminal discovery probability, by area under
-the discovery curve, by mean episode return, or by episodes-to-first-discovery, all of which are
-"IQM" and all of which give different winners.
+Freeze item 2 pins selection objectives for three searches — the class-1 backbone search and the two
+class-3 mini-searches (`prior_scale`, `eps_schedule`) — and item 3 pins the statistic (IQM) and
+tie-break (lower parameter value) "throughout". IQM is a *reduction*; IQM **of what** is nowhere
+stated. Two candidates could be ranked by terminal discovery probability, by area under the discovery
+curve, by mean episode return, or by episodes-to-first-discovery, all of which are "IQM" and all of
+which give different winners.
+
+**Scope correction (2026-08-01).** As first written, this entry asserted that item 2 "pins a full
+objective for both class-3 mini-searches" and that only the class-1 search was defective. That is
+wrong, and the error was in reading a *cell* specification as an *outcome* specification. Grepping
+every `IQM of …` occurrence across both `preregistration.md` and the v6.3 requirements document
+returns six clauses; each names a cell and a size set, and **none names an outcome**:
+
+| clause | cell pinned | sizes pinned | **outcome pinned** |
+|---|---|---|---|
+| class-1 backbone (item 2) | — (the ε-greedy DDQN backbone) | ✓ dev | **✗** |
+| class-3 `prior_scale` (item 2, param table Class 3) | ✓ `(episodic, on, 10)` | ✓ dev | **✗** |
+| class-3 `eps_schedule` (item 2, param table Class 3) | ✓ `(mean_eps, off, 10)` | ✓ dev | **✗** |
+
+Item 2 pins *more* of the class-3 objectives than the class-1 one, not all of it. Since both class-3
+mini-searches are DeepSea searches at the same 3 seeds × 2 development sizes = 6 runs per candidate,
+they inherit the identical tie pathology described below. Fixing class-1 alone would leave the freeze
+item carrying two different selection outcomes with only one of them stated — the harder thing to
+defend at review than the original gap. **The sub-clause therefore governs all three searches.**
 
 ### Why it is not cosmetic
 
@@ -341,33 +362,76 @@ distinct values** — it collapses 0/6 with 1/6, and 5/6 with 6/6:
 |---|---|---|---|---|---|---|---|
 | IQM | 0.000 | **0.000** | 0.167 | 0.500 | 0.833 | **1.000** | 1.000 |
 
-Simulated over a 12-candidate field (20 000 trials per regime), the terminal-binary objective ties
-at the top of the field in 44 % of searches when few candidates discover and **98 %** once several
-are good. Item 3's tie-break is "the lower parameter value", which is uncorrelated with performance —
-so in the regime the search is *supposed* to resolve, selection is close to arbitrary.
+That table is not a hand calculation: it is `src/selection.iqm` — the frozen implementation that will
+actually score the search — evaluated on all seven 6-vectors. Its fractional-rank weighting does not
+rescue the binary case, because with n = 6 the two boundary observations carry weight 0.5 each and
+the middle four are all identical whenever k ∈ {0,1} or k ∈ {5,6}.
+
+Item 3's tie-break is "the lower parameter value", which is uncorrelated with performance — so in the
+regime the search is *supposed* to resolve, selection is close to arbitrary.
 
 ### Recommendation: area under the discovery curve
 
-`trainer.py` already logs `discovery_prob` at **every checkpoint**, so the per-seed mean of that
-curve is recoverable from the existing CSV with no new instrumentation and no re-run. It rewards
-discovering *earlier*, which is the property the backbone is being tuned for, and it is continuous:
+`trainer.py` logs `discovery_prob` at **every checkpoint** as a *cumulative* indicator
+(`float(discovered)`, monotone 0 → 1), so the per-seed mean of that curve is recoverable from the
+existing CSV with no new instrumentation and no re-run — including retroactively, on tuning runs
+already executed. Two consequences follow from the cumulative encoding:
 
-| regime (true discovery prob) | objective | P(tie at top) | P(pick true best) |
-|---|---|---|---|
-| hard (p ∈ 0.00–0.25) | terminal binary | 0.438 | 0.470 |
-| hard | **discovery AUC** | **0.112** | 0.466 |
-| mixed (p ∈ 0.05–0.60) | terminal binary | 0.445 | 0.587 |
-| mixed | **discovery AUC** | **0.027** | 0.587 |
-| easy (p ∈ 0.40–0.90) | terminal binary | 0.980 | 0.439 |
-| easy | **discovery AUC** | **0.053** | **0.610** |
+* **It is continuous** where the terminal indicator is five-valued.
+* **It is exactly a time-to-discovery measure.** If discovery happens at checkpoint *j* of *C*, then
+  AUC = 1 − *j*/*C* identically, strictly decreasing in *j*, with never-discovered mapping to 0 by
+  construction. So this objective already carries the information the episodes-to-first-discovery
+  alternative would supply, *without* needing the censoring convention that alternative would require
+  the protocol to invent and defend for never-discovering seeds.
 
-### Proposed item 2 sub-clause
+Simulation, 12-candidate field, 3 seeds × 2 development sizes = 6 runs per candidate, 20 checkpoints,
+scored through `src/selection.iqm`. Candidate quality is a per-checkpoint discovery hazard *h* with
+terminal p = 1 − (1 − *h*)^C, so a better candidate also discovers earlier — the coupling a backbone
+search actually faces. Regret = (true p of the best candidate) − (true p of the selected candidate):
 
-> The class-1 backbone search objective is the **IQM across tuning seeds of the per-seed area under
-> the online discovery-probability curve** (the unweighted mean of `discovery_prob` over the run's
-> checkpoints), pooled across the two development sizes. Ties are broken by the lower parameter value
-> (item 3). This objective is a *selection input*, not a reported estimand; the primary outcome for
-> all reported results remains terminal discovery probability (§1.1), unchanged.
+| regime (true discovery prob) | objective | P(tie at top) | P(pick true best) | mean regret |
+|---|---|---|---|---|
+| hard (p ∈ 0.00–0.25) | terminal binary | 0.442 | 0.214 | 0.051 |
+| hard | **discovery AUC** | **0.105** | 0.212 | 0.051 |
+| mixed (p ∈ 0.05–0.60) | terminal binary | 0.433 | 0.297 | 0.077 |
+| mixed | **discovery AUC** | **0.011** | 0.286 | 0.080 |
+| easy (p ∈ 0.40–0.90) | terminal binary | 0.976 | 0.203 | 0.112 |
+| easy | **discovery AUC** | **0.024** | **0.295** | **0.078** |
+
+AUC weakly dominates: the tie rate collapses everywhere, accuracy and regret are within noise in the
+hard and mixed regimes, and in the easy regime — the one a *well-tuned* search is most likely to
+produce, and the one where terminal-binary ties 98 % of the time — it picks the true best 0.295 vs
+0.203 of the time at two-thirds the regret.
+
+<details>
+<summary>Superseded: the accuracy column as first tabulated (2026-07-31) — retained for provenance</summary>
+
+The original table reported P(pick true best) of 0.470 / 0.587 / 0.439 for terminal binary against
+0.466 / 0.587 / **0.610** for AUC. Those absolute levels do not reproduce, and the AUC advantage they
+showed in the easy regime was real but arrived at through a model that could not have produced it
+honestly: **the original simulation drew each run's discovery *time* independently of the candidate's
+quality.** Under that model a better candidate discovers no earlier than a worse one, so AUC carries
+no signal terminal-binary lacks and can only break ties by noise — which is exactly what the
+recomputation showed (identical mean regret, 0.052 vs 0.053, in every regime).
+
+Correcting the model to couple discovery time to quality through a per-checkpoint hazard is what
+produces the honest advantage now tabulated above. The tie-rate column, which is the load-bearing
+one, reproduced within Monte-Carlo error throughout (0.44 / 0.43 / 0.98 against the original
+0.44 / 0.45 / 0.98) and was never in doubt. **The recommendation is unchanged; its justification is
+now the tie rate plus a smaller, real accuracy gain in the easy regime, rather than the large
+accuracy gain originally claimed.**
+</details>
+
+### Proposed item 2 sub-clause (owner-approved 2026-08-01)
+
+> **Search objective (all pre-registered searches).** The selection objective for the class-1
+> backbone search and for both class-3 mini-searches is the **IQM across tuning seeds of the per-seed
+> area under the online discovery-probability curve** — the unweighted mean of the `discovery_prob`
+> metric over the run's checkpoints — pooled across the two development sizes. The cell and size set
+> for each search are as already stated in this item; this sub-clause supplies only the outcome that
+> IQM reduces, which was previously unstated for all three. Ties are broken by the lower parameter
+> value (item 3). This objective is a **selection input, not a reported estimand**: the primary
+> outcome for all reported results remains terminal discovery probability (§1.1), unchanged.
 
 ### Why this must be pre-specified rather than chosen at run time
 
@@ -376,8 +440,10 @@ results would be a post-hoc degree of freedom over the backbone that every cell 
 inherits — the single largest such freedom in the design. It costs nothing to fix now and cannot be
 fixed later.
 
-**Blocks:** step 5a (sweep driver) — which metric it reduces. Does **not** block steps 7 or 8, whose
-objectives are already pinned.
+**Blocks:** step 5a (sweep driver) — which metric it reduces. *As first written this entry added
+"does not block steps 7 or 8, whose objectives are already pinned"; the scope correction above
+retracts that — steps 7 and 8 are the two class-3 mini-searches and their outcome was equally
+unstated, so they were blocked on this decision too. All three are unblocked by the one sub-clause.*
 
 ---
 

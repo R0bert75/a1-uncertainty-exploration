@@ -14,7 +14,7 @@ below is an absent symbol or absent config, not an impression.
 | Step | Required | Exists | Blocking gap |
 |---|---|---|---|
 | 4. 5-seed baseline + wall-clock | 2 | 2 | none — code complete; no 5-seed run committed |
-| 5. Switchboard + backbone tuning + disagreement | 4 | 1 | **sweep driver**; tuning objective unspecified; disagreement logging; 6 of 10 cells |
+| 5. Switchboard + backbone tuning + disagreement | 4 | 4 | ~~none — all four closed 2026-08-01~~ (see §5; the row as first written said "6 of 10 cells", the true count was 8 of 10) |
 | 6. DeepSea dev sizes + solve-vs-depth | 2 | 1 | figure; needs step-5 runs first |
 | 7. Priors + `prior_scale` mini-search | 2 | 1 | mini-search (reuses step-5 driver) |
 | 8. NoisyNet + `eps_schedule` mini-search | 3 | 1 | mini-search **+ its objective's input cell does not exist** |
@@ -67,7 +67,35 @@ figures must commit them under `logs/`.
 
 The largest step, and it decomposes into four independent pieces.
 
-### 5a. Sweep driver — MISSING (the critical artefact)
+### 5a. Sweep driver — **BUILT 2026-08-01** (`src/search.py`, 28 tests)
+
+> **Status update 2026-08-01.** `src/search.py` now exists and does all four bullets below.
+> `make search-dry` prints the frozen 12-candidate field without executing anything;
+> `make search-backbone` runs the pass. The original entry is kept verbatim underneath because
+> it is the specification the module was built against.
+>
+> Two RNG facts surfaced during the build that the entry below did not anticipate, and both are
+> now pinned by mutation-verified tests:
+>
+> 1. **Tuning needs its own `cell_id` namespace.** Streams key on `cell_id` alone, so a tuning
+>    run reusing the reference cell's arm (`episodic|off|K1`) would draw byte-identical
+>    `init`/`env_mapping`/`replay`/`action_noise` at the same `seed_index` as that cell's
+>    *evaluation* runs — the backbone would be selected on the very environment instances it is
+>    later measured on. `src/config.py` gained a `tune|` arm branch, restricted to
+>    `role: exploratory` so a reported config cannot use it to escape the factorial identity check.
+> 2. **Candidates must *share* streams with each other.** All 12 use the same tuning `cell_id`, so
+>    at a given seed index every candidate gets the same DeepSea mapping — common random numbers,
+>    which is what makes the candidate contrast a hyperparameter contrast. The `cell_id` therefore
+>    encodes neither the candidate index nor the size; `run_id` and the config fingerprint carry
+>    those, so the 72 runs stay separable.
+>
+> Known limitation, deliberate: `deepsea_action_mapping` derives from a size-independent stream, so
+> the N=20 mapping's first 10 entries equal the N=10 mapping's. The two sizes of one candidate are
+> not independent draws. Left as-is — it is what the committed cell configs already do, and
+> diverging here would tune under a different mapping convention than the runs being tuned for.
+
+<details>
+<summary>Original entry as first written (2026-07-31) — the spec the module was built against</summary>
 
 No `src/search.py`, `src/sweep.py`, or equivalent. `selection.score_candidates(points, score_fn,
 sort_key_fn)` is a *pure* function by design — it consumes already-collected scores. Nothing
@@ -83,7 +111,24 @@ supplies `score_fn`. What must exist:
 Budget already approved: 12 candidates × 6 runs = **72 runs** of the 120 allotted to all tuning
 (the remaining 48 are the two mini-searches, steps 7 and 8).
 
-### 5b. Tuning objective metric — UNSPECIFIED IN THE PROTOCOL
+</details>
+
+### 5b. Tuning objective metric — **RESOLVED 2026-08-01** (Gap 4, owner sign-off)
+
+> **Status update 2026-08-01.** Owner chose the discovery-AUC objective, and the scope was
+> *widened*: this entry claimed only the backbone search lacked an objective while "both class-3
+> mini-searches" had theirs pinned. That was wrong — grepping every "IQM of" clause showed each
+> names a *cell* and a *size set* but never an outcome, and both mini-searches run at the same
+> 6-runs-per-candidate scale, so they inherit the identical tie pathology. One sub-clause now
+> governs all three searches. See Gap 4 in `protocol/decisions/staged_stage3_protocol_fixes.md`
+> for the corrected simulation (the accuracy figures quoted below were recomputed: the original
+> model drew discovery *time* independently of candidate quality, so AUC could only break ties by
+> noise; under a coupled hazard AUC weakly dominates, never worse, 29 % vs 20 % top-1 in the easy
+> regime). Implemented as `search.discovery_auc`.
+
+<details>
+<summary>Original entry as first written (2026-07-31)</summary>
+
 
 Freeze item 2 pins the *statistic* (IQM, item 3) and the *tie-break* (lower parameter value) for the
 backbone search, and pins full objectives for both class-3 mini-searches — `prior_scale` by "IQM of
@@ -120,13 +165,40 @@ P(select the truly best candidate) from 0.44 to 0.61 in the high-signal regime:
 before the search runs, or the choice of objective becomes a post-hoc degree of freedom. It is the
 fourth staged gap and should join `protocol/decisions/staged_stage3_protocol_fixes.md`.
 
-### 5c. Disagreement logging — MISSING
+</details>
+
+### 5c. Disagreement logging — **BUILT 2026-08-01** (`src/diagnostics/`, main `0d6df0b`)
+
+> **Status update 2026-08-01.** Three modules, each with one concern: `substrate.py` (record type
+> + npz writer, no agent knowledge), `samplers.py` (`ValueSampler` adapters + probe set, no run
+> knowledge), `recorder.py` (per-run probe set, visitation histogram, spec). Exposed as
+> `trainer --diagnostics`, default OFF, episode lane only — the whole battery references Q\*, which
+> MinAtar does not have. **Load-bearing invariant:** `--diagnostics` leaves the metrics CSV
+> byte-identical; that is what lets it be a CLI flag rather than a config field, keeping it out of
+> the config fingerprint without weakening the reproducibility gate. Verified by mutation.
+
+<details>
+<summary>Original entry as first written (2026-07-31)</summary>
+
 
 Spec step 5 requires it explicitly. No `sigma`, `head_std`, or disagreement symbol exists in
 `bdqn.py` or `trainer.py`. This is the per-checkpoint ensemble-spread quantity that RQ2-L's σ(s,a)
 diagnostics consume, so it is also a step-9 prerequisite.
 
-### 5d. Six of ten Part-A cells have no config
+</details>
+
+### 5d. ~~Six~~ **Eight** of ten Part-A cells have no config — **CLOSED 2026-08-01** (main `b0f63ef`)
+
+> **Status update + correction 2026-08-01.** All 10 factorial cells now have committed DeepSea
+> configs, so `C-USE` and `C-COHERENCE` have instantiated comparison arms and step 8's pinned
+> objective cell (`ensemble_mean|off|K10`) exists. **The heading's count was wrong:** it said six
+> missing, but `episodic|off|K1` is the DDQN *reference* and sits outside the switchboard, so only
+> two of the ten were covered and **eight** were missing. The paragraph below states this correctly
+> in its own text — the arithmetic in the heading did not follow it.
+
+<details>
+<summary>Original entry as first written (2026-07-31)</summary>
+
 
 Freeze item 12's 10-cell structured partial factorial: `use_rule × prior` at K=10 (6 cells) plus
 `episodic_head` at K ∈ {5, 20} × both prior levels (4 cells). Committed DeepSea configs cover only
@@ -136,6 +208,8 @@ and a NoisyNet arm.
 **`ensemble_mean` has no DeepSea config at all** — so the **C-USE contrast** (episodic_head vs.
 capacity-matched ensemble-mean ε-greedy) currently has no instantiated comparison arm, and neither
 does `per_step`, which is the temporal-coherence comparator.
+
+</details>
 
 ---
 

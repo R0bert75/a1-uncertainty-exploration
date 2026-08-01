@@ -70,6 +70,13 @@ IMPLEMENTED_ENVS = (
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
 ENSEMBLE_METHODS = ("bdqn", "rp_bdqn")
 
+#: Arm prefix reserved for hyperparameter-search runs (freeze item 2). An arm starting with
+#: this is a tuning namespace, not a factorial cell — see the cell_id resolution branch in
+#: :func:`resolve_config` for why tuning needs its own RNG namespace. ``src.search`` is the
+#: only producer; the separator makes collision with a real cell_id impossible, since
+#: canonical cell ids are ``<use_rule>|<prior>|K<K>`` and no use_rule is named "tune".
+TUNING_ARM_PREFIX = "tune|"
+
 
 class ConfigError(ValueError):
     """Raised when a run config is structurally invalid or violates the freeze discipline."""
@@ -292,6 +299,25 @@ def resolve_config(data: dict[str, Any], *, source_path: str | None = None) -> R
             "'|' separators (e.g. 'noisynet'); it is not an ensemble-factorial cell",
         )
         data["cell_id"] = arm
+    elif isinstance(data.get("arm"), str) and data["arm"].startswith(TUNING_ARM_PREFIX):
+        # Hyperparameter-search runs (freeze item 2) are NOT cells of the switchboard, and
+        # for the same reason NoisyNet is not: the RNG streams key on cell_id alone. A
+        # tuning run of the ε-greedy backbone that reused the reference cell's arm
+        # ('episodic|off|K1') would receive byte-identical init / env_mapping / replay /
+        # action_noise draws at the same seed_index as the reference cell's *evaluation*
+        # runs — i.e. the backbone would be selected on the very environment instances it
+        # is later measured on. Freeze item 1's "no reuse across cells" rule already
+        # forbids that; this branch is what makes the tuning namespace expressible.
+        #
+        # Deliberately restricted to role='exploratory'. Tuning runs are not reported, and
+        # confining the exemption to that role keeps it impossible for a confirmatory or
+        # development config to opt out of the factorial identity check by renaming its arm.
+        _require(
+            data["role"] == "exploratory",
+            f"a tuning arm ({TUNING_ARM_PREFIX}...) requires role: exploratory, got "
+            f"{data['role']!r} — tuning runs are not reported results",
+        )
+        data["cell_id"] = data["arm"]
     elif data["part"] == "A":
         data["cell_id"] = _validate_part_a_factorial(data)
     else:
