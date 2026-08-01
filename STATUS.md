@@ -30,12 +30,13 @@ language. Most empirical RL work has none of this.
 
 **Honest weaknesses:**
 
-- **Five staged protocol fixes are pending stage 3** (Gaps 1–5 approved; Fix #4 exact
-  formulation + Fixes #5 and #6 from external review need owner sign-off). All are staged in
+- **Six staged protocol fixes are pending stage 3** (Gaps 1–5 approved; Fix #4 exact
+  formulation approved + extended by external review; Fix #5 signed off 2026-08-01 with
+  clarified S×A scope and strengthened Q*-hash assertion; Fix #6 signed off 2026-08-01 with
+  amendment — Diagnostic 8 renamed and uniqueness threshold added). All are staged in
   `protocol/decisions/staged_stage3_protocol_fixes.md`. They will be applied when the freeze
-  tag is cut — this is the intended channel, not a process failure. Fix #4 in particular is
-  a methodological decision (tuning objective), not a typo, and the reviewer noted it must be
-  disclosed to whoever closes Gate 1.
+  tag is cut — this is the intended channel, not a process failure. Fix #4 is a methodological
+  decision (tuning objective) that must be disclosed to whoever closes Gate 1.
 - **Scope is large.** 17 implementation steps, ~2,500–3,000 runs, two benchmark families,
   four methods, nine diagnostics. The descope ladder and compute caps exist precisely
   because this risk was recognized, but the risk is real.
@@ -115,8 +116,8 @@ additional items that need sign-off before Fix #4 / #5 / #6 are finalized:**
 | 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`** | ✅ signed off 2026-07-30 |
 | 3 | Per-candidate tuning seeds (freeze item 1) | **3 seeds × 2 development sizes** | ✅ signed off 2026-07-30 |
 | 4 | Backbone tuning objective (Gap 4 + Fix #4) | **Discovery AUC, IQM pooled over 6 runs; tie-breaker cascade** | ✅ approved 2026-08-01; exact formulation in Fix #4 pending sign-off |
-| 5 | Probe-set details: terminal states, S×A scope, Q*-mapping hash (Fix #5) | See Fix #5 in `staged_stage3_protocol_fixes.md` | **Pending owner sign-off** |
-| 6 | Diagnostic 8 MinAtar state-selection rule (Fix #6) | Episode-start states, 100 seeds from `probe_set` stream (recommended) | **Pending owner sign-off** |
+| 5 | Probe-set details: terminal states excluded, S×A Cartesian for state-action diagnostics, Q* cached by (N, mapping_hash, env_params) + runtime hash assertion (Fix #5) | ✅ signed off 2026-08-01 (with strengthened 5b scope definition and 5c runtime assertion) |
+| 6 | Diagnostic 8 renamed to *initial-state return-prediction alignment*; 100 episode-start seeds, ≥20 unique observations threshold, uninformative if below (Fix #6) | ✅ signed off 2026-08-01 (amended: rename + uniqueness threshold) |
 
 The text is staged in `protocol/decisions/staged_stage3_protocol_fixes.md` and applied to
 `preregistration.md` at stage 3 — not now, because `prereg-draft` must stay a stable reference
@@ -204,5 +205,4 @@ In order:
 
 **The critical path is process, not code.** The only code items remaining before the freeze
 are: Fix #6 sign-off + Diagnostic 8 implementation, and optionally the C11 per-contrast purity
-script. Everything else is owner/process actions (Gate 1 waiver or substitute reviewer, OSF
-mirror, sign-offs on Fixes #5 and #6). Those are independent of each other and all parallel.
+script. Everything else is owner/process actions (Gate 1 waiver or substitute reviewer (~2026-08-05 deadline), OSF mirror). Those are independent of each other and all parallel.
