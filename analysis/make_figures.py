@@ -83,6 +83,99 @@ def _plot_group(
     return path
 
 
+PILOT_LABEL = "PILOT (development tier) — not a confirmatory result"
+
+
+def _depth_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Join every DeepSea run's terminal discovery indicator to the depth N it ran at.
+
+    N is recovered from the ``deep_sea_size`` **metric row** the episode lane emits once per
+    run, not from a column: the frozen CSV schema (gate C2) has no env-parameter column and
+    the committed cell ``run_id``s do not encode N. Runs predating that row are dropped with
+    a count rather than guessed at, because inferring N from a run_id suffix would silently
+    admit only the tuning-search runs (whose ids carry ``_N<size>``) and quietly exclude the
+    committed factorial cells (whose ids do not) — a selection effect on the figure's x-axis.
+
+    Discovery per (run, seed) is the **terminal** value of the cumulative ``discovery_prob``
+    indicator, i.e. "did this seed ever discover within the frozen episode budget" — the
+    §1.1 primary outcome. That is deliberately NOT the discovery-AUC used to *tune* the
+    backbone: AUC rewards discovering early, which is the right objective for ranking
+    candidates but the wrong quantity to report against depth.
+    """
+    size_rows = df[df["metric"] == "deep_sea_size"]
+    sizes = size_rows.groupby("run_id")["value"].first().astype(int)
+
+    disc = df[(df["metric"] == "discovery_prob") & (df["axis"] == "online")]
+    if disc.empty or sizes.empty:
+        return pd.DataFrame(columns=["deep_sea_size", "method", "seed", "discovered"])
+
+    # Terminal indicator per (run_id, seed): the row at the largest checkpoint.
+    idx = disc.groupby(["run_id", "seed"])["checkpoint"].idxmax()
+    terminal = disc.loc[idx, ["run_id", "seed", "method", "value"]].copy()
+    terminal = terminal.rename(columns={"value": "discovered"})
+    terminal["deep_sea_size"] = terminal["run_id"].map(sizes)
+
+    dropped = int(terminal["deep_sea_size"].isna().sum())
+    if dropped:
+        print(f"  [depth figure] dropped {dropped} run-seed(s) with no deep_sea_size row")
+    terminal = terminal.dropna(subset=["deep_sea_size"])
+    terminal["deep_sea_size"] = terminal["deep_sea_size"].astype(int)
+    return terminal
+
+
+def plot_discovery_vs_depth(df: pd.DataFrame, out_dir: Path) -> Path | None:
+    """Pilot figure: discovery probability within budget vs DeepSea depth N, per method.
+
+    The protocol's term is *discovery probability within the pre-registered episode budget*
+    (§1.1); "solve-vs-depth" is informal shorthand that appears nowhere in the frozen text,
+    so the axis label uses the protocol's wording. Carries a mandatory PILOT banner: these
+    are development-tier runs, and the confirmatory claim is a five-size aggregate this
+    figure is not.
+    """
+    table = _depth_table(df)
+    if table.empty:
+        return None
+
+    agg = (
+        table.groupby(["method", "deep_sea_size"])["discovered"]
+        .agg(["mean", "count", "sum"])
+        .reset_index()
+    )
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.2), dpi=120)
+    for method, g in agg.groupby("method"):
+        g = g.sort_values("deep_sea_size")
+        # Wilson score interval: the estimand is a proportion of a handful of seeds, where a
+        # normal-approximation band runs outside [0, 1] and collapses to zero width at 0/n
+        # and n/n -- exactly the regime this figure is about (eps-greedy failing at depth).
+        n, k = g["count"].to_numpy(float), g["sum"].to_numpy(float)
+        z = 1.96
+        denom = 1.0 + z**2 / n
+        centre = (k / n + z**2 / (2 * n)) / denom
+        half = (z / denom) * ((k / n * (1 - k / n) / n + z**2 / (4 * n**2)) ** 0.5)
+        ax.plot(g["deep_sea_size"], g["mean"], marker="o", ms=4, label=str(method))
+        ax.fill_between(g["deep_sea_size"], centre - half, centre + half, alpha=0.15)
+
+    ax.set_xlabel("DeepSea depth $N$")
+    ax.set_ylabel("discovery probability within budget")
+    ax.set_ylim(-0.05, 1.05)
+    ax.axhline(0.0, color="0.7", lw=0.8, zorder=0)
+    seeds = int(table.groupby(["method", "deep_sea_size"]).size().max())
+    ax.set_title(
+        f"{PILOT_LABEL}\ndiscovery probability vs depth  (\u2264{seeds} seeds/point, "
+        "Wilson 95% band)",
+        fontsize=9,
+    )
+    ax.legend(fontsize=8, title="method")
+    fig.tight_layout()
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "pilot_partA_discovery_vs_depth.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--logs", type=Path, default=Path("logs"))
@@ -91,8 +184,14 @@ def main(argv: list[str] | None = None) -> int:
 
     df = load_logs(args.logs)
     written = []
-    for (part, env, metric, axis), g in df.groupby(["part", "env", "metric", "axis"]):
+    # deep_sea_size is an env descriptor, not an estimand: it must not get its own panel.
+    panel_df = df[df["metric"] != "deep_sea_size"]
+    for (part, env, metric, axis), g in panel_df.groupby(["part", "env", "metric", "axis"]):
         written.append(_plot_group(g, str(part), str(env), str(metric), str(axis), args.out))
+
+    depth_fig = plot_discovery_vs_depth(df[df["env"] == "deep_sea"], args.out)
+    if depth_fig is not None:
+        written.append(depth_fig)
 
     print(f"rebuilt {len(written)} figure(s) from {df['__source__'].nunique()} CSV(s):")
     for p in written:

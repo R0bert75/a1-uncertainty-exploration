@@ -94,7 +94,15 @@ def test_train_writes_schema_correct_rows(tmp_path):
     # Header is exactly the frozen schema (gate C2).
     assert list(rows[0].keys()) == list(BASE_FIELDS)
     metrics = {r["metric"] for r in rows}
-    assert metrics == {"discovery_prob", "episode_return"}
+    assert metrics == {"discovery_prob", "episode_return", "deep_sea_size"}
+    # deep_sea_size is an env DESCRIPTOR, not a series: exactly one row per seed. If it ever
+    # became per-checkpoint, _depth_table's groupby-first would still work but the figure's
+    # seed counts would silently inflate.
+    size_rows = [r for r in rows if r["metric"] == "deep_sea_size"]
+    seeds = {r["seed"] for r in rows}
+    assert len(size_rows) == len(seeds)
+    want = float(cfg.data["env_budget"]["deep_sea_size"])
+    assert {float(r["value"]) for r in size_rows} == {want}
     # config_sha256 ties every row to the committed resolved config (C13).
     assert all(r["config_sha256"] == cfg.config_sha256 for r in rows)
 

@@ -358,6 +358,21 @@ def run_seed(
             ck_index += 1
             window_returns = []
 
+    # The depth N as a metric row. The frozen CSV schema (BASE_FIELDS, gate C2) carries no
+    # env-parameter column, and the committed cell run_ids do not encode N either -- yet
+    # analysis/make_figures.py may read nothing but the CSVs (gate C2). Emitting N as its own
+    # `metric` row is precisely the widening path the schema documents, and it is what makes a
+    # depth-axis figure reconstructible from logs alone. Constant within a run, logged once at
+    # the end so it cannot be mistaken for a per-checkpoint series.
+    log.log(
+        step=step,
+        metric="deep_sea_size",
+        value=float(size),
+        checkpoint=max(0, ck_index - 1),
+        is_t0=False,
+        axis="online",
+    )
+
     # Per-seed wall-clock: a descope-ladder trigger input (spec §8 item 4) and a v1.0
     # reporting requirement ("compute reported"). It is deliberately NOT written to the
     # metrics CSV: wall-clock is machine-dependent, and gate C1 requires a (config, seed)
