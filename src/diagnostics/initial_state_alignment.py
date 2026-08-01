@@ -46,8 +46,8 @@ flagged as non-reproducible.  :func:`diag8_to_record` adds this field automatica
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field
 from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from typing import Protocol, runtime_checkable
 
 import numpy as np
