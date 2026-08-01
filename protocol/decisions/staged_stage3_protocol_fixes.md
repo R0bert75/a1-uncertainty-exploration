@@ -11,15 +11,18 @@ the next section for why the sign-off does not license an edit today.
 
 | Freeze item | Value | Status |
 |---|---|---|
-| 7 — probe set | Exhaustive, `\|S\| = N(N+1)/2`, no cap; no MinAtar probe set | approved |
+| 7 — probe set | Exhaustive, `\|S\| = N(N+1)/2`, no cap; no MinAtar probe set; terminal states excluded (\|S\| reduced by 1 per size); state-action diagnostics use S×A; Q* cached keyed by (N, mapping_hash, env_params) | ✅ approved + Fix #5 signed off 2026-08-01 |
 | 2 — search budget | `n_backbone = 12`, `n_mini = 4` (each of two) | approved |
 | 1 — seed counts | **3 seeds per tuning candidate** (new sub-clause, see Gap 3) | approved |
 | 2 — backbone search *objective* | **IQM of per-seed discovery-curve AUC** (new sub-clause, see Gap 4) | ✅ approved 2026-08-01; extended by Fix #4 (exact formulation + tie-breaker + N=20 caveat) |
 
-**All five gaps are now owner-decided.** Gap 4 was surfaced on 2026-07-31 and owner-approved
-2026-08-01 (discovery AUC). Fix #4 (2026-08-01, from external reviewer) extends Gap 4 with the
-exact mathematical formulation, tie-breaker cascade, and N=20 zero-stratum disclosure.
-Fixes #5 and #6 (2026-08-01, from external reviewer) are staged and **require owner sign-off**.
+**All gaps and fixes are now owner-decided.** Gap 4 was surfaced on 2026-07-31 and
+owner-approved 2026-08-01 (discovery AUC). Fix #4 (2026-08-01, from external reviewer) extends
+Gap 4 with the exact mathematical formulation, tie-breaker cascade, and N=20 zero-stratum
+disclosure. Fix #5 signed off 2026-08-01 (with two clarifications to the original staging
+text — see Fix #5 below). Fix #6 amended and signed off 2026-08-01: Diagnostic 8 is renamed
+from *behavior-policy analogue* to **initial-state return-prediction diagnostic** and
+scoped accordingly.
 
 ## Why this file exists instead of an edit to `preregistration.md`
 
@@ -600,10 +603,11 @@ candidate text, not just the original draft.
 
 ## Fix #5 — Probe-set details: three quantities not frozen (external review feedback, 2026-08-01)
 
-**Incorporates: external reviewer feedback 2026-08-01. Owner sign-off required.**
+**Incorporates: external reviewer feedback 2026-08-01. ✅ Owner sign-off 2026-08-01.**
 
-The reviewer identified three probe-set details that are not explicitly frozen anywhere in the
-current documents, despite being load-bearing for the §3.3 diagnostic battery:
+The reviewer identified three probe-set details that were not explicitly frozen anywhere in the
+current documents, despite being load-bearing for the §3.3 diagnostic battery. All three
+decisions are now signed off with clarifications made during the sign-off:
 
 ### The three unresolved details
 
@@ -642,74 +646,82 @@ mapping is non-trivial across cells.
 > the strictly non-terminal reachable states: S = {(row, col) : row + col < N−1}, giving
 > |S| = N(N+1)/2 − 1 states. (The exhaustive-enumeration rule in Gap 1 is otherwise
 > unchanged; this clarification reduces |S| by one entry per size.)
+> Note: the state immediately *before* a terminal transition remains in S; the terminal reward
+> is fully accounted for in its Q* value.
 >
-> (b) **S × A scope:** diagnostics iterate over **all (s, a) pairs with s ∈ S and a ∈ {0,1}**
-> (full Cartesian product, both actions per state). This is the natural scope for a measure
-> of uncertainty quality: the diagnostic asks whether the model's uncertainty is well-calibrated
-> globally, not just along the optimal path.
+> (b) **S × A scope:** the base probe population is all reachable non-terminal states S.
+> State-action diagnostics (marginal alignment, containment, etc.) use the full Cartesian
+> product S × A, i.e., all (s, a) pairs with s ∈ S and a ∈ {0,1}. State-level diagnostics
+> (action-gap alignment, optimal-path σ, visitation-conditioned decay) use their explicitly
+> defined projections or subsets as specified in the diagnostic-battery protocol — these are
+> not S × A scoped.
 >
-> (c) **Action-mapping provenance:** the `env_mapping` hash stored in the run's
-> `resolved_config.json` is recorded alongside every diagnostic output file. Before computing
-> any Q*-based alignment statistic, the diagnostic driver reads the hash, retrieves the
-> permutation from the run's `env_mapping` stream seed, and applies it to index into Q*
-> correctly. A guard assertion checks that the loaded Q* array's argmax pattern matches the
-> permuted reference before any correlation is computed.
+> (c) **Action-mapping provenance:** the complete action mapping (or its deterministic
+> seed/config representation) **and** its hash are stored in the run's `resolved_config.json`
+> and recorded alongside every diagnostic output file. Q* is computed and cached keyed by
+> `(N, mapping_hash, environment_parameters)`. Before computing any Q*-based alignment
+> statistic, the diagnostic driver asserts that the hash in the run record matches the hash
+> of the cached Q* entry — this is a runtime assertion checked at diagnostic time, not merely
+> at logging time. A secondary guard assertion checks that the argmax pattern of the loaded
+> Q* matches the permuted reference before any correlation is computed.
 
 ---
 
 ## Fix #6 — Diagnostic 8: MinAtar state-selection rule unresolved (external review feedback, 2026-08-01)
 
-**Incorporates: external reviewer feedback 2026-08-01. Owner sign-off required.**
+**Incorporates: external reviewer feedback 2026-08-01. ✅ Owner sign-off 2026-08-01 (amended).**
 
 The reviewer identified a gap that was created by resolving a different gap. Freeze item 20's
-conditional (which MinAtar Diagnostic 8 probe-rollout variant to run) was resolved to "full
-probe rollouts" at commit `288834b`. The `MinAtarEnv.clone_state()` / `.restore_state()`
-implementation that unblocked it is committed and tested. But:
+conditional resolved to "full probe rollouts" at commit `288834b`. The gap is: "full probe
+rollouts from which states?" This was never asked while MinAtar had no clone/restore; once
+it does, the question surfaces.
 
-**Closing "which variant" did not close "from which states."**
+**The staged recommendation (episode-start states, 100 seeds) was AMENDED during sign-off
+for two reasons identified by the owner:**
 
-Diagnostic 8 is the MinAtar behavior-policy analogue: 100 clone/restore reproduction tests
-whose outcome decides between full probe rollouts, episode-start-only, or dropping the
-analogue. "Full probe rollouts" means: restore a state, roll out the behavior policy, measure
-whether the trajectory is bit-exact. But which states are restored? The item-20 conditional
-names the variant; it says nothing about the state population.
+1. **Episode-start uniqueness is not guaranteed.** Many MinAtar games have low reset-state
+   diversity; 100 seeds may yield far fewer than 100 distinct observations, making the nominal
+   n misleading and rank-based diagnostics potentially near-degenerate.
+2. **clone/restore was unlocked specifically for within-episode state access.** Using only
+   resets makes clone/restore nearly unnecessary; any needed state can be obtained with
+   seeded `reset()` alone.
 
-At the time item 20 was written, MinAtar was known to have no clone/restore. Now that it does,
-the state-selection question surfaces as a genuine open item that was never asked.
-
-### The unresolved question
-
-Candidate state populations for Diagnostic 8:
-
-- **On-policy encountered states**: states visited during a training run, sampled from the
-  replay buffer or a logged trajectory snapshot. Depends on the policy; varies across seeds and
-  checkpoints.
-- **Episode-start states**: states at the beginning of each episode (`env.reset()`). For
-  MinAtar these are fully deterministic given the seed, so they are reproducible.
-- **Fixed evaluation trajectories**: a frozen set of (env, seed) pairs that define starting
-  configurations, evaluated by rolling out the behavior policy from each.
-- **Uniform snapshots at fixed step intervals**: save every K steps during training, restore
-  and roll out from each.
-
-The choice determines what "full probe rollouts" means in practice, how reproducible the
-diagnostic is across implementations, and how it relates to the DeepSea probe set (which
-is exhaustive over reachable states).
+The owner's decision is therefore to **narrow the scope and rename** rather than build a
+within-episode state bank (which would effectively re-introduce the MinAtar probe set that was
+deliberately excluded):
 
 ### Status
 
-**This fix requires owner decision before Diagnostic 8 is implemented.** The implementation
-in `src/diagnostics/` should not begin until the state-selection rule is written here and
-signed off. The recommended approach, consistent with the spirit of the DeepSea battery
-(exhaustive where feasible, probe-set-stream governed otherwise), is:
+**Signed off 2026-08-01. Diagnostic 8 is renamed and explicitly scoped.**
 
-> **Diagnostic 8 state population:** episode-start states from the first 100 distinct seeds
-> applied to the MinAtar `env.reset()` call, drawn from the `probe_set` stream. This is
-> reproducible, independent of any learned policy, and directly analogous to the DeepSea
-> probe set's goal of sampling the reachable state distribution representatively. The 100
-> rollouts mandated by item 20 correspond to these 100 states.
+### Owner's amended decision
 
-**Owner decision needed: accept this recommendation, or choose a different state population
-and document the rationale here before implementation begins.**
+**Diagnostic 8 is no longer called "behavior-policy analogue" and makes no claim to represent
+the within-episode state distribution.** It is renamed:
+
+> **Diagnostic 8: initial-state return-prediction alignment** (MinAtar, appendix-only)
+
+This is an exploratory, appendix-only diagnostic. It is explicitly not a general
+uncertainty-quality diagnostic and does not participate in primary contrasts C-i or C-ii.
+
+### Frozen definition
+
+> **Diagnostic 8 state population:** 100 pre-specified episode-start seeds per MinAtar game,
+> drawn from the `probe_set` stream. The number of unique initial observations obtained from
+> these 100 seeds is counted and **reported alongside the diagnostic output**. If fewer than
+> 20 unique initial observations are obtained for a given game, Diagnostic 8 is **omitted for
+> that game and reported as uninformative** rather than run on near-duplicate resets. No claim
+> is made that this population represents the within-episode or general-state distribution of
+> MinAtar. The 20-unique-state threshold is frozen here and may not be adjusted post-hoc.
+>
+> Clone/restore (`MinAtarEnv.clone_state()` / `.restore_state()`) is used as specified in the
+> item-20 conditional to execute the bit-exact reproduction test from each selected start state
+> and verify environment determinism.
+
+The diagnostic's scope is: *does the agent's value/uncertainty prediction at episode start
+track empirical return from that state?* It does not extend to within-episode states.
+
+**Implementation may now proceed.** No further sign-off is needed for Diagnostic 8.
 
 ---
 
