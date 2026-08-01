@@ -18,7 +18,7 @@ below is an absent symbol or absent config, not an impression.
 | 6. DeepSea dev sizes + solve-vs-depth | 2 | 1 | figure; needs step-5 runs first |
 | 7. Priors + `prior_scale` mini-search | 2 | 2 | none — code complete; no runs committed |
 | 8. NoisyNet + `eps_schedule` mini-search | 3 | 3 | none — code complete; no runs committed. ~~input cell does not exist~~ (committed `b0f63ef`) |
-| 9. RQ2-Q battery | 10 | 4 | 6 of 9 diagnostics; #8 needs MinAtar clone/restore; ~~trainer never calls the substrate~~ **wired at `0d6df0b`; this row was stale** |
+| 9. RQ2-Q battery | 10 | 9 | ~~6 of 9 diagnostics~~ **1-5, 7, 9 BUILT at `444583c`** (`analysis/diagnostics_battery.py`); ~~#8 needs MinAtar clone/restore~~ **conditional resolved `288834b`**, analogue itself still to write; ~~trainer never calls the substrate~~ **wired at `0d6df0b`** |
 
 **One artefact unblocks four steps.** Steps 5, 7, 8 and (transitively) 6 all wait on a single
 missing module: something that takes a config template plus a parameter grid, runs the cells, and
@@ -279,15 +279,15 @@ The nine frozen §3.3 diagnostics, against the tree:
 
 | # | Diagnostic | State |
 |---|---|---|
-| 1 | Marginal alignment — Spearman ρ over (s,a) between σ and \|Q̄ − Q*\| (**RQ2-L primary**) | missing |
-| 2 | Action-gap alignment (top-2 by Q̄, ties by lowest action index) | missing |
-| 3 | Incorrect-argmax flagging | missing |
-| 4 | Optimal-path uncertainty (per depth; AUC over depth) | missing |
-| 5 | Visitation-conditioned decay (OLS of log σ on log(1+v)) | missing |
+| 1 | Marginal alignment — Spearman ρ over (s,a) between σ and \|Q̄ − Q*\| (**RQ2-L primary**) | **BUILT 2026-08-01** (`444583c`) |
+| 2 | Action-gap alignment (top-2 by Q̄, ties by lowest action index) | **BUILT 2026-08-01** (`444583c`) |
+| 3 | Incorrect-argmax flagging | **BUILT 2026-08-01** (`444583c`) |
+| 4 | Optimal-path uncertainty (per depth; AUC over depth) | **BUILT 2026-08-01** (`444583c`) |
+| 5 | Visitation-conditioned decay (OLS of log σ on log(1+v)) | **BUILT 2026-08-01** (`444583c`) |
 | 6 | Temporal persistence | **implemented** (`temporal_persistence.py`, both variants + samplers) |
-| 7 | Empirical containment (central 80 % interval) | missing |
+| 7 | Empirical containment (central 80 % interval) | **BUILT 2026-08-01** (`444583c`) |
 | 8 | MinAtar behavior-policy analogue — deterministic conditional (freeze item 20) | **conditional RESOLVED → `full`** (2026-08-01); analogue itself still to write |
-| 9 | Undefined-value policy (NA, counted, published; σ = 0 substantive) | missing |
+| 9 | Undefined-value policy (NA, counted, published; σ = 0 substantive) | **BUILT 2026-08-01** — `Result(value/n_used/n_excluded/reason)`, shared by all six |
 
 Plus two structural pieces:
 
@@ -372,17 +372,26 @@ the 150–250 envelope but with 10 runs of slack rather than 20.
 **Setup (code) is complete for steps 5, 7 and 8 except one shared driver, and for step 9 except
 post-hoc analysis. Nothing further is blocked on a decision.** What remains:
 
-1. **Run the backbone tuning pass** — `make search-backbone`, 72 runs. Compute, not code. Produces
-   the tuned DDQN backbone every later comparison is defined against, so it gates 6, 7 and 8.
+1. ~~**Run the backbone tuning pass**~~ **DONE 2026-08-01 (`c382e08`)** — 72 runs complete.
+   Winner c01 (lr 6.05e-4, batch 128, hidden 64, target period 100), IQM 0.1583, no tie-break.
+   **Carry this forward:** at N=20 all 12 candidates discovered in 0/3 seeds, so the winner is
+   selected on the N=10 stratum alone and the tuning never observed a discovering run at the
+   larger size. Any cross-size claim against this backbone must state that.
 2. ~~**Generalize the driver to the two class-3 mini-searches.**~~ **DONE 2026-08-01** —
    `make search-prior-scale`, `make search-eps-schedule`, `make search-all`. All three searches
    share one execution/objective/selection path.
 3. **Step 6's solve-vs-depth figure** — needs the runs from (1), must carry a "pilot" label.
-4. **Step 9's six missing diagnostics** — pure post-hoc analysis over the committed `.npz` files;
-   no trainer change, no extra runs. Diagnostic 1 (marginal alignment) is the RQ2-L primary and
-   should come first.
-5. **MinAtar clone/restore** — the one genuinely missing *capability* in the tree, and the only
-   hard blocker left. Needed to evaluate freeze item 20's conditional in any direction.
+4. ~~**Step 9's six missing diagnostics**~~ **DONE 2026-08-01 (`444583c`)** —
+   `analysis/diagnostics_battery.py`, 25 tests, 6 mutations verified. Two findings worth carrying:
+   (a) `run_battery_over_run` requires `(master_seed, cell_id, seed_index)` because DeepSea's
+   per-row action mapping — hence Q\* — is run-specific, and a mismatched key silently compares σ
+   against a half-flipped ground truth; the record carries `mapping_hash` to verify. (b) An exact
+   `ptp == 0` degeneracy test does not fire on float32-derived data, so a mathematically constant
+   vector let Spearman rank rounding noise and return a plausible ρ ≈ 0.99; `is_degenerate` is a
+   scale-relative guard added in response to that observed failure.
+5. ~~**MinAtar clone/restore**~~ **DONE 2026-08-01 (`288834b`)** — item 20 resolved to `full`
+   (100/100 bit-exact on both tuning games). The remaining step-9 work is writing diagnostic 8's
+   behaviour-policy analogue itself, now that the conditional permits it.
 6. **Cut the final freeze tag**, land the staged protocol fixes, mirror to OSF, then pilot.
 
 <details>
