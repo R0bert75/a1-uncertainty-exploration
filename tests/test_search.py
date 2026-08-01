@@ -333,7 +333,13 @@ def tiny_template(template):
 
 def test_end_to_end_search_writes_an_auditable_record(tiny_template, tmp_path):
     best, record = search.run_backbone_search(
-        tiny_template, out_dir=tmp_path, n=3, seeds=(0, 1), sizes=(5, 6), n_checkpoints=5
+        tiny_template,
+        out_dir=tmp_path,
+        n=3,
+        seeds=(0, 1),
+        sizes=(5, 6),
+        n_checkpoints=5,
+        episodes=40,
     )
     assert len(record.per_candidate) == 3
     for entry in record.per_candidate:
@@ -358,10 +364,22 @@ def test_end_to_end_search_writes_an_auditable_record(tiny_template, tmp_path):
 def test_search_is_reproducible(tiny_template, tmp_path):
     """The whole search is a function of master_seed: same seed, same winner and scores."""
     a, ra = search.run_backbone_search(
-        tiny_template, out_dir=tmp_path / "a", n=2, seeds=(0,), sizes=(5,), n_checkpoints=4
+        tiny_template,
+        out_dir=tmp_path / "a",
+        n=2,
+        seeds=(0,),
+        sizes=(5,),
+        n_checkpoints=4,
+        episodes=40,
     )
     b, rb = search.run_backbone_search(
-        tiny_template, out_dir=tmp_path / "b", n=2, seeds=(0,), sizes=(5,), n_checkpoints=4
+        tiny_template,
+        out_dir=tmp_path / "b",
+        n=2,
+        seeds=(0,),
+        sizes=(5,),
+        n_checkpoints=4,
+        episodes=40,
     )
     assert a.winner.label == b.winner.label
     assert [e["scores"] for e in ra.per_candidate] == [e["scores"] for e in rb.per_candidate]
@@ -553,3 +571,56 @@ def test_mini_cli_dry_run(capsys):
         lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("c")]
         assert len(lines) == search.N_MINI
         assert spec["param"] in lines[0]
+
+
+def test_all_three_searches_use_one_episode_budget():
+    """C-iii equal-search-budget. Each search points at a DIFFERENT template, and the templates
+    disagree (500 vs 2000 episodes). Inheriting would have tuned the backbone at a 4x smaller
+    budget than the two mini-searches while the protocol claims identical search tiers."""
+    seen = set()
+    tmpl = config_mod.load_config(TEMPLATE)
+    point = search.sample_backbone_points(tmpl.master_seed)[0]
+    for size in search.DEV_SIZES:
+        cfg = search.candidate_config(tmpl, point, size, index=0)
+        seen.add(cfg.data["env_budget"]["episodes"])
+    for which, spec in search.MINI_SEARCHES.items():
+        t = config_mod.load_config(spec["template"])
+        p = search.sample_mini_points(t.master_seed, which)[0]
+        for size in search.DEV_SIZES:
+            cfg = search.mini_candidate_config(t, which, p, size, index=0)
+            seen.add(cfg.data["env_budget"]["episodes"])
+    assert seen == {config_mod.DEEP_SEA_EPISODE_BUDGET}
+
+
+def test_episode_budget_is_constant_in_n_not_inherited():
+    """The budget must not vary with size (owner decision: constant episodes, not constant
+    steps), and must not track whatever the template happened to declare."""
+    tmpl = config_mod.load_config(TEMPLATE)
+    assert tmpl.data["env_budget"]["episodes"] != config_mod.DEEP_SEA_EPISODE_BUDGET
+    point = search.sample_backbone_points(tmpl.master_seed)[0]
+    budgets = {
+        search.candidate_config(tmpl, point, size, index=0).data["env_budget"]["episodes"]
+        for size in (10, 20, 30)
+    }
+    assert budgets == {2000}
+
+
+def test_committed_deepsea_cells_agree_with_the_pinned_budget():
+    """2000 is not a new number — it is what the eight committed factorial cells already use.
+    If a cell ever disagrees, the tuning runs stop matching the runs they tune for."""
+    import glob
+
+    for path in sorted(glob.glob("configs/cell_*deepsea*.yaml")):
+        cfg = config_mod.load_config(path)
+        assert cfg.data["env_budget"]["episodes"] == config_mod.DEEP_SEA_EPISODE_BUDGET, path
+
+
+def test_episodes_override_is_test_only():
+    """The override exists so the end-to-end tests run in seconds. If a protocol entry point
+    ever grows one, the searches stop being comparable and this catches it."""
+    source = Path("src/search.py").read_text()
+    runner_bodies = source.split("def main(", 1)[0]
+    assert "episodes=EPISODES" not in runner_bodies
+    cli = source.split("def main(", 1)[1]
+    assert "--episodes" not in cli, "CLI must not expose an episode-budget flag"
+    assert "episodes=" not in cli, "main() must not pass an episode override"

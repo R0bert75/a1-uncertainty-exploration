@@ -293,6 +293,7 @@ def candidate_config(
     *,
     index: int,
     seeds: Sequence[int] = TUNING_SEEDS,
+    episodes: int | None = None,
 ) -> config_mod.RunConfig:
     """Materialize one (candidate, size) pair as a validated :class:`RunConfig`.
 
@@ -321,6 +322,14 @@ def candidate_config(
 
     budget = dict(data.get("env_budget") or {})
     budget["deep_sea_size"] = int(size)
+    # Pin the episode budget rather than inherit the template's. Each search points at a
+    # different template, so inheriting would have tuned the backbone at 500 episodes and the
+    # two mini-searches at 2000 — a 4x asymmetry that violates the equal-search-budget standard
+    # (C-iii) the Gap 2 consistency check exists to protect. ``episodes`` overrides it only for
+    # tests, which need a sweep that finishes in seconds; no protocol path passes it.
+    budget["episodes"] = int(episodes) if episodes is not None else (
+        config_mod.DEEP_SEA_EPISODE_BUDGET
+    )
     data["env_budget"] = budget
     data["seeds"] = [int(s) for s in seeds]
     return config_mod.resolve_config(data)
@@ -362,6 +371,7 @@ def mini_candidate_config(
     *,
     index: int,
     seeds: Sequence[int] = TUNING_SEEDS,
+    episodes: int | None = None,
 ) -> config_mod.RunConfig:
     """Materialize one (class-3 candidate, size) pair as a validated :class:`RunConfig`.
 
@@ -388,6 +398,14 @@ def mini_candidate_config(
 
     budget = dict(data.get("env_budget") or {})
     budget["deep_sea_size"] = int(size)
+    # Pin the episode budget rather than inherit the template's. Each search points at a
+    # different template, so inheriting would have tuned the backbone at 500 episodes and the
+    # two mini-searches at 2000 — a 4x asymmetry that violates the equal-search-budget standard
+    # (C-iii) the Gap 2 consistency check exists to protect. ``episodes`` overrides it only for
+    # tests, which need a sweep that finishes in seconds; no protocol path passes it.
+    budget["episodes"] = int(episodes) if episodes is not None else (
+        config_mod.DEEP_SEA_EPISODE_BUDGET
+    )
     data["env_budget"] = budget
     data["seeds"] = [int(s) for s in seeds]
 
@@ -420,6 +438,7 @@ def run_candidate(
     seeds: Sequence[int] = TUNING_SEEDS,
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
+    episodes: int | None = None,
     config_fn: Callable[..., config_mod.RunConfig] = candidate_config,
 ) -> dict[str, Any]:
     """Execute one candidate over all (size, seed) pairs and score it.
@@ -447,7 +466,7 @@ def run_candidate(
     csvs: list[str] = []
     ordered: list[tuple[int, int]] = []
     for size in sizes:
-        cfg = config_fn(template, point, size, index=index, seeds=seeds)
+        cfg = config_fn(template, point, size, index=index, seeds=seeds, episodes=episodes)
         csv_path = trainer.train(cfg, out, n_checkpoints=n_checkpoints)
         csvs.append(str(csv_path))
         rows = _read_rows(csv_path)
@@ -500,6 +519,7 @@ def run_backbone_search(
     seeds: Sequence[int] = TUNING_SEEDS,
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
+    episodes: int | None = None,
 ) -> tuple[selection.SelectionResult, SearchRecord]:
     """Run the full class-1 backbone search and select the winner.
 
@@ -522,6 +542,7 @@ def run_backbone_search(
             seeds=seeds,
             sizes=sizes,
             n_checkpoints=n_checkpoints,
+            episodes=episodes,
         )
         for i, point in enumerate(points)
     ]
@@ -565,6 +586,7 @@ def run_mini_search(
     seeds: Sequence[int] = TUNING_SEEDS,
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
+    episodes: int | None = None,
 ) -> tuple[selection.SelectionResult, SearchRecord]:
     """Run one class-3 mini-search and select the winner.
 
@@ -587,6 +609,7 @@ def run_mini_search(
             seeds=seeds,
             sizes=sizes,
             n_checkpoints=n_checkpoints,
+            episodes=episodes,
             config_fn=config_fn,
         )
         for i, point in enumerate(points)

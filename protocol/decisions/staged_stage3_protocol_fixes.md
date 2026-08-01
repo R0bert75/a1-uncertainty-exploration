@@ -457,6 +457,63 @@ expected tuple updated.
 
 ---
 
+## Gap 5 — Freeze item 5: the DeepSea per-size episode budget was never committed
+
+**Surfaced 2026-08-01, by sizing the tuning sweep before launching it.**
+
+Item 5 says: "Episode budget per N: frozen per size (the pre-registered DeepSea episode budget;
+the size-scaled budget committed with the pipeline)." The clause defers the actual numbers to a
+mapping committed alongside the code — and **no such mapping was ever committed.** `grep` finds no
+size→episodes table anywhere in the tree. What exists is a convention nobody wrote down: all eight
+committed factorial cells use 2000 episodes at N=30, and the two example configs use 500 at N=8.
+
+This is load-bearing for more than the sweep. Four things read this quantity:
+
+1. the three tuning searches (`src/search.py`),
+2. item 6's reporting window ("DeepSea reported at the frozen per-size episode budget"),
+3. item 11's t₀ landmark ("t₀ = 10% of the episode budget"),
+4. the class-3 ε-decay derivation, which is 10% of the budget in steps.
+
+**How it surfaced.** `src/search.py`'s materializers override `deep_sea_size` but inherited
+`episodes` from whichever template each search points at. Since the three searches point at
+*different* templates, the backbone would have been tuned at **500 episodes** and the two
+mini-searches at **2000** — a 4× asymmetry, in exactly the equal-search-budget standard (C-iii)
+that this document's Gap 2 consistency check exists to protect. Neither figure was size-scaled.
+
+### Proposed replacement text for item 5's budget sentence
+
+> **Episode budget per N: 2000 episodes at every N**, constant in N, for all DeepSea runs —
+> development and confirmatory sizes alike, tuning and evaluation alike. Env *steps* scale with
+> N (a DeepSea episode is exactly N steps, so the step budget is 2000·N), which is the sense in
+> which the budget is size-scaled; the *episode* count is not.
+
+**Why constant episodes and not constant steps** (owner decision 2026-08-01). One episode is one
+attempt at the treasure. Holding attempts fixed across N is what makes ε-greedy's failure onset
+with depth a property of *the method* rather than of the budget. Under a constant-*step* budget
+the small sizes receive proportionally more attempts — 6000 episodes at N=10 against 2000 at
+N=30 — which flatters ε-greedy at precisely the sizes where its failure is the claim (§ item 5's
+own rationale cites "published ε-greedy failure onset near N≈10–15"). A linear-in-N reading was
+also rejected: 667 episodes at N=10 risks near-zero discovery for every method, so the
+development sizes would stop discriminating between tuning candidates.
+
+**2000 is not a new number.** It is what the eight committed cells already use, so no committed
+config changes and the tuning runs match the runs they tune for.
+
+**Wording note.** This *narrows* item 5 rather than filling a blank: the phrase "the size-scaled
+budget" must be amended, since on this resolution the episode count is explicitly not size-scaled.
+That is why this is a staged protocol fix and not merely a committed constant.
+
+**Landed in code as** `config.DEEP_SEA_EPISODE_BUDGET = 2000`, applied by both search
+materializers and asserted against the committed cells by
+`test_committed_deepsea_cells_agree_with_the_pinned_budget`. The materializers accept an
+`episodes` override used **only** by tests that need a sweep finishing in seconds; a guard test
+asserts no protocol entry point (including the CLI) exposes it.
+
+**Blocks:** nothing that is not already blocked — but it silently *mis-specified* every tuning
+run, so it had to land before the sweep, not after.
+
+---
+
 ## Recommended sequence
 
 1. ~~Owner signs off on the corrected recommendations.~~ **DONE 2026-07-30 — approved.** For the
@@ -475,8 +532,9 @@ expected tuple updated.
    `n_backbone` down to 8), which freeze item 1 should state and currently does not.
 2. Send both gaps to the reviewer as an **erratum against `prereg-draft`** — they are missing
    stage-1 values, and disclosing them is cheaper than having the reviewer find them.
-3. At stage 3, apply both texts to `preregistration.md`, add the `hparam_search` stream, and cut
-   the final tag + OSF mirror.
+3. At stage 3, apply **all five** gap texts to `preregistration.md`, add the `hparam_search`
+   stream, and cut the final tag + OSF mirror. (Gap 5 amends item 5's wording rather than filling
+   a blank — it must not be applied as a pure insertion.)
 
 Until step 3, `preregistration.md` is unchanged and `prereg-draft` remains a valid stable
 reference for the pass in progress.

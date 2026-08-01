@@ -70,6 +70,24 @@ IMPLEMENTED_ENVS = (
 # Ensemble methods carry a per-head bootstrap (Class-2 params apply); the baseline does not.
 ENSEMBLE_METHODS = ("bdqn", "rp_bdqn")
 
+#: DeepSea episode budget, **constant in N** (freeze item 5; owner decision 2026-08-01).
+#:
+#: Item 5 pre-registers "episode budget per N: frozen per size (the pre-registered DeepSea
+#: episode budget; the size-scaled budget committed with the pipeline)" but no mapping was ever
+#: committed, so four things read a quantity that did not exist: the tuning searches, item 6's
+#: reporting window, item 11's t₀ landmark, and ``search``'s ε-decay derivation.
+#:
+#: The resolution is *constant episodes*, not constant steps and not linear in N. One episode is
+#: one attempt at the treasure, so holding attempts fixed is what makes ε-greedy's failure onset
+#: with N a property of the method rather than of the budget — under constant *steps* the small
+#: sizes would get proportionally more attempts, flattering ε-greedy at exactly the sizes where
+#: its failure is the claim. Env steps still scale with N (an episode is exactly N steps), which
+#: is the sense in which the budget is "size-scaled"; item 5's wording needs amending to say so
+#: and that amendment is staged, not applied — ``preregistration.md`` stays frozen.
+#:
+#: 2000 is not a new number: it is what all eight committed DeepSea cells already use at N=30.
+DEEP_SEA_EPISODE_BUDGET = 2000
+
 #: Arm prefix reserved for hyperparameter-search runs (freeze item 2). An arm starting with
 #: this is a tuning namespace, not a factorial cell — see the cell_id resolution branch in
 #: :func:`resolve_config` for why tuning needs its own RNG namespace. ``src.search`` is the
