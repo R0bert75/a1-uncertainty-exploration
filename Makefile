@@ -42,19 +42,23 @@ audit:  ## Run the C13 configuration-identity audit over the committed cell conf
 audit-runs:  ## Run C13 over executed runs' resolved_config.json (Session 4+; needs runs)
 	PYTHONPATH=. $(PYTHON) audits/c13_audit.py --configs $(LOGS) --mode runs --out audits/c13
 
+# Worker processes for the tuning sweeps. Results are byte-identical at any value
+# (test_parallel_execution_is_byte_identical_to_serial); this only buys wall-clock.
+WORKERS ?= 8
+
 search-dry:  ## Print all three pre-registered candidate fields (no runs)
 	PYTHONPATH=. $(PYTHON) -m src.search --kind backbone --dry-run
 	PYTHONPATH=. $(PYTHON) -m src.search --kind prior_scale --dry-run
 	PYTHONPATH=. $(PYTHON) -m src.search --kind eps_schedule --dry-run
 
 search-backbone:  ## Class-1 backbone search: 12 candidates x 3 seeds x 2 sizes = 72 runs
-	PYTHONPATH=. $(PYTHON) -m src.search --kind backbone
+	PYTHONPATH=. $(PYTHON) -m src.search --kind backbone --workers $(WORKERS)
 
 search-prior-scale:  ## Class-3 mini-search (step 7): 4 candidates x 3 seeds x 2 sizes = 24 runs
-	PYTHONPATH=. $(PYTHON) -m src.search --kind prior_scale
+	PYTHONPATH=. $(PYTHON) -m src.search --kind prior_scale --workers $(WORKERS)
 
 search-eps-schedule:  ## Class-3 mini-search (step 8): 4 candidates x 3 seeds x 2 sizes = 24 runs
-	PYTHONPATH=. $(PYTHON) -m src.search --kind eps_schedule
+	PYTHONPATH=. $(PYTHON) -m src.search --kind eps_schedule --workers $(WORKERS)
 
 search-all: search-backbone search-prior-scale search-eps-schedule  ## All 20 tuning candidates (120 runs)
 

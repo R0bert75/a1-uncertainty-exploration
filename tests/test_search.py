@@ -401,12 +401,25 @@ def test_cli_dry_run_prints_the_field(capsys):
 
 
 def test_search_module_does_not_import_torch_at_module_scope():
-    """``--dry-run`` and the audit path must work without a torch import; the trainer import
-    is deliberately function-local."""
-    source = Path("src/search.py").read_text()
-    head = source.split("def run_candidate", 1)[0]
-    assert "import torch" not in head
-    assert "from src import trainer" not in head
+    """``--dry-run`` and the audit path must work without a torch import; the trainer and torch
+    imports are deliberately function-local.
+
+    Checked on the AST rather than by splitting the source text at a function name: the text
+    heuristic silently stopped covering anything defined above that function, which is where
+    the parallel worker (and its function-local ``import torch``) landed."""
+    import ast
+
+    tree = ast.parse(Path("src/search.py").read_text())
+    module_level = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
+    names = set()
+    for node in module_level:
+        if isinstance(node, ast.Import):
+            names.update(a.name for a in node.names)
+        else:
+            names.add(node.module or "")
+    assert "torch" not in names
+    assert "src.trainer" not in names
+    assert not any(n.startswith("torch") for n in names), sorted(names)
 
 
 # --------------------------------------------------------------------------- #
@@ -472,7 +485,11 @@ def test_mini_tuning_streams_are_disjoint_from_their_input_cell():
     for which, spec in search.MINI_SEARCHES.items():
         tmpl = config_mod.load_config(spec["template"])
         cfg = search.mini_candidate_config(
-            tmpl, which, search.sample_mini_points(tmpl.master_seed, which)[0], 10, index=0
+            tmpl,
+            search.sample_mini_points(tmpl.master_seed, which)[0],
+            10,
+            which=which,
+            index=0,
         )
         assert cfg.cell_id == f"tune|{which}"
         assert cfg.cell_id != spec["arm"]
@@ -490,7 +507,8 @@ def test_mini_candidates_share_random_numbers_but_stay_separable():
         tmpl = config_mod.load_config(spec["template"])
         pts = search.sample_mini_points(tmpl.master_seed, which)
         cfgs = [
-            search.mini_candidate_config(tmpl, which, p, 10, index=i) for i, p in enumerate(pts)
+            search.mini_candidate_config(tmpl, p, 10, which=which, index=i)
+            for i, p in enumerate(pts)
         ]
         assert len({c.cell_id for c in cfgs}) == 1
         assert len({c.run_id for c in cfgs}) == len(pts)
@@ -503,7 +521,7 @@ def test_mini_cell_id_encodes_neither_index_nor_size():
     tmpl = config_mod.load_config(spec["template"])
     pts = search.sample_mini_points(tmpl.master_seed, which)
     ids = {
-        search.mini_candidate_config(tmpl, which, pts[i], size, index=i).cell_id
+        search.mini_candidate_config(tmpl, pts[i], size, which=which, index=i).cell_id
         for i in range(len(pts))
         for size in search.DEV_SIZES
     }
@@ -517,7 +535,7 @@ def test_eps_decay_is_ten_percent_of_each_size_budget():
     tmpl = config_mod.load_config(search.MINI_SEARCHES[which]["template"])
     point = search.sample_mini_points(tmpl.master_seed, which)[0]
     for size in search.DEV_SIZES:
-        cfg = search.mini_candidate_config(tmpl, which, point, size, index=0)
+        cfg = search.mini_candidate_config(tmpl, point, size, which=which, index=0)
         episodes = cfg.data["env_budget"]["episodes"]
         sched = cfg.data["factor_specific"]["eps_schedule"]
         assert sched["eps_decay_steps"] == round(0.10 * episodes * size)
@@ -546,13 +564,13 @@ def test_mini_search_configs_build_real_agents():
     """End-to-end: the drawn value must reach the agent, not just the config dict."""
     tmpl = config_mod.load_config(search.MINI_SEARCHES["prior_scale"]["template"])
     point = search.sample_mini_points(tmpl.master_seed, "prior_scale")[0]
-    cfg = search.mini_candidate_config(tmpl, "prior_scale", point, 10, index=0)
+    cfg = search.mini_candidate_config(tmpl, point, 10, which="prior_scale", index=0)
     agent = config_mod.build_agent(cfg, 0)
     assert agent.cfg.prior_scale == pytest.approx(point["prior_scale"])
 
     tmpl = config_mod.load_config(search.MINI_SEARCHES["eps_schedule"]["template"])
     point = search.sample_mini_points(tmpl.master_seed, "eps_schedule")[0]
-    cfg = search.mini_candidate_config(tmpl, "eps_schedule", point, 10, index=0)
+    cfg = search.mini_candidate_config(tmpl, point, 10, which="eps_schedule", index=0)
     agent = config_mod.build_agent(cfg, 0)
     assert agent.cfg.eps_end == pytest.approx(point["eps_end"])
     assert agent.cfg.eps_decay_steps == cfg.data["factor_specific"]["eps_schedule"][
@@ -587,7 +605,7 @@ def test_all_three_searches_use_one_episode_budget():
         t = config_mod.load_config(spec["template"])
         p = search.sample_mini_points(t.master_seed, which)[0]
         for size in search.DEV_SIZES:
-            cfg = search.mini_candidate_config(t, which, p, size, index=0)
+            cfg = search.mini_candidate_config(t, p, size, which=which, index=0)
             seen.add(cfg.data["env_budget"]["episodes"])
     assert seen == {config_mod.DEEP_SEA_EPISODE_BUDGET}
 
@@ -624,3 +642,35 @@ def test_episodes_override_is_test_only():
     cli = source.split("def main(", 1)[1]
     assert "--episodes" not in cli, "CLI must not expose an episode-budget flag"
     assert "episodes=" not in cli, "main() must not pass an episode override"
+
+
+def test_parallel_execution_is_byte_identical_to_serial(tiny_template, tmp_path):
+    """The sweep may be parallelized ONLY because every stream derives from
+    (master_seed, cell_id, stream, seed_index) — never from a global RNG, wall-clock time, or
+    execution order. If that ever stops holding, the winner becomes schedule-dependent and the
+    search stops being reproducible from its record. This test is the tripwire."""
+    kw = dict(n=3, seeds=(0, 1), sizes=(5, 6), n_checkpoints=5, episodes=30)
+    ser, rec_s = search.run_backbone_search(tiny_template, out_dir=tmp_path / "s", **kw)
+    par, rec_p = search.run_backbone_search(
+        tiny_template, out_dir=tmp_path / "p", max_workers=4, **kw
+    )
+    assert [e["scores"] for e in rec_p.per_candidate] == [e["scores"] for e in rec_s.per_candidate]
+    assert par.winner.label == ser.winner.label
+    assert rec_p.points == rec_s.points
+
+
+def test_parallel_mini_search_is_byte_identical_to_serial(tmp_path):
+    """Same tripwire for the class-3 path, which uses a different materializer."""
+    template = config_mod.load_config("configs/example_rpbdqn_deepsea_dev.yaml")
+    data = dict(template.data)
+    data["env_budget"] = {"deep_sea_size": 5, "episodes": 30}
+    data.pop("cell_id", None)
+    data.pop("size_class", None)
+    tiny = config_mod.resolve_config(data)
+    kw = dict(n=2, seeds=(0,), sizes=(5,), n_checkpoints=4, episodes=30)
+    ser, rec_s = search.run_mini_search(tiny, "prior_scale", out_dir=tmp_path / "s", **kw)
+    par, rec_p = search.run_mini_search(
+        tiny, "prior_scale", out_dir=tmp_path / "p", max_workers=2, **kw
+    )
+    assert [e["scores"] for e in rec_p.per_candidate] == [e["scores"] for e in rec_s.per_candidate]
+    assert par.winner.label == ser.winner.label

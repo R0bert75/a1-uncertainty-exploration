@@ -365,10 +365,10 @@ def sample_mini_points(
 
 def mini_candidate_config(
     template: config_mod.RunConfig,
-    which: str,
     point: Mapping[str, Any],
     size: int,
     *,
+    which: str,
     index: int,
     seeds: Sequence[int] = TUNING_SEEDS,
     episodes: int | None = None,
@@ -429,6 +429,81 @@ def mini_candidate_config(
     return config_mod.resolve_config(data)
 
 
+# --------------------------------------------------------------------------- #
+# Parallel execution
+# --------------------------------------------------------------------------- #
+
+
+def _train_one(payload: tuple[dict[str, Any], str, int]) -> tuple[int, int, str]:
+    """Train one materialized config in a worker process. Top-level so it pickles.
+
+    Safe to parallelize *only* because every RNG stream in this project derives from
+    ``(master_seed, cell_id, stream, seed_index)`` — never from a global generator, wall-clock
+    time, or execution order. Two runs therefore cannot influence each other's draws, and a
+    parallel sweep is byte-identical to a serial one
+    (``test_parallel_execution_is_byte_identical_to_serial`` asserts exactly that).
+
+    Each worker is pinned to one torch thread: the sweep's parallelism is across runs, and
+    letting every worker also spawn 8 intra-op threads oversubscribes the box and makes the
+    whole sweep slower than the serial version.
+    """
+    data, out_dir, n_checkpoints = payload
+    import torch
+
+    torch.set_num_threads(1)
+    from src import trainer as _trainer
+
+    index = int(data.pop(_INDEX_KEY_RUN))
+    cfg = config_mod.resolve_config(data)
+    csv_path = _trainer.train(cfg, out_dir, n_checkpoints=n_checkpoints)
+    return int(cfg.data["env_budget"]["deep_sea_size"]), index, str(csv_path)
+
+
+#: Key under which a materialized config carries its candidate index into a worker payload.
+#: Stripped before :func:`config.resolve_config` sees it — configs have a closed schema.
+_INDEX_KEY_RUN = "_candidate_index"
+
+
+def _pretrain(
+    jobs: list[tuple[int, int, config_mod.RunConfig]],
+    *,
+    out_dir: str | Path,
+    n_checkpoints: int,
+    max_workers: int | None,
+) -> dict[tuple[int, int], str] | None:
+    """Optionally pre-train every job in a process pool; ``None`` means run serially.
+
+    ``max_workers=None`` (the default, and what every test uses) keeps the original serial
+    path untouched. The sweep entry points pass a worker count because the full class-1 field
+    is ~16 h serially on this box.
+    """
+    if not max_workers or max_workers <= 1:
+        return None
+    return _train_all_parallel(jobs, out_dir, n_checkpoints, int(max_workers))
+
+
+def _train_all_parallel(
+    jobs: list[tuple[int, int, config_mod.RunConfig]],
+    out_dir: str | Path,
+    n_checkpoints: int,
+    max_workers: int,
+) -> dict[tuple[int, int], str]:
+    """Train every (candidate, size) job across a process pool; return ``{(idx, size): csv}``."""
+    import concurrent.futures as cf
+
+    payloads = []
+    for index, _size, cfg in jobs:
+        data = json.loads(json.dumps(cfg.data))
+        data[_INDEX_KEY_RUN] = index
+        payloads.append((data, str(out_dir), n_checkpoints))
+
+    done: dict[tuple[int, int], str] = {}
+    with cf.ProcessPoolExecutor(max_workers=max_workers) as pool:
+        for size, index, csv_path in pool.map(_train_one, payloads):
+            done[(index, size)] = csv_path
+    return done
+
+
 def run_candidate(
     template: config_mod.RunConfig,
     point: Mapping[str, Any],
@@ -440,6 +515,7 @@ def run_candidate(
     n_checkpoints: int = 20,
     episodes: int | None = None,
     config_fn: Callable[..., config_mod.RunConfig] = candidate_config,
+    csv_cache: Mapping[tuple[int, int], str] | None = None,
 ) -> dict[str, Any]:
     """Execute one candidate over all (size, seed) pairs and score it.
 
@@ -466,8 +542,13 @@ def run_candidate(
     csvs: list[str] = []
     ordered: list[tuple[int, int]] = []
     for size in sizes:
-        cfg = config_fn(template, point, size, index=index, seeds=seeds, episodes=episodes)
-        csv_path = trainer.train(cfg, out, n_checkpoints=n_checkpoints)
+        if csv_cache is not None and (index, int(size)) in csv_cache:
+            # Already trained by the process pool. Scoring below is the SAME code in both
+            # paths, so a parallel sweep cannot score differently from a serial one.
+            csv_path = csv_cache[(index, int(size))]
+        else:
+            cfg = config_fn(template, point, size, index=index, seeds=seeds, episodes=episodes)
+            csv_path = trainer.train(cfg, out, n_checkpoints=n_checkpoints)
         csvs.append(str(csv_path))
         rows = _read_rows(csv_path)
         scored = score_from_rows(rows)
@@ -520,6 +601,7 @@ def run_backbone_search(
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
     episodes: int | None = None,
+    max_workers: int | None = None,
 ) -> tuple[selection.SelectionResult, SearchRecord]:
     """Run the full class-1 backbone search and select the winner.
 
@@ -533,6 +615,17 @@ def run_backbone_search(
     # collide on every categorical field and differ only in lr, and a `points.index(p)`
     # lookup would then silently score one candidate with the other's runs.
     indexed = [dict(p, **{_INDEX_KEY: i}) for i, p in enumerate(points)]
+    cache = _pretrain(
+        [
+            (i, size, candidate_config(template, p, size, index=i, seeds=seeds,
+                                       episodes=episodes))
+            for i, p in enumerate(points)
+            for size in sizes
+        ],
+        out_dir=out_dir,
+        n_checkpoints=n_checkpoints,
+        max_workers=max_workers,
+    )
     results = [
         run_candidate(
             template,
@@ -543,6 +636,7 @@ def run_backbone_search(
             sizes=sizes,
             n_checkpoints=n_checkpoints,
             episodes=episodes,
+            csv_cache=cache,
         )
         for i, point in enumerate(points)
     ]
@@ -587,6 +681,7 @@ def run_mini_search(
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
     episodes: int | None = None,
+    max_workers: int | None = None,
 ) -> tuple[selection.SelectionResult, SearchRecord]:
     """Run one class-3 mini-search and select the winner.
 
@@ -600,6 +695,16 @@ def run_mini_search(
     points = sample_mini_points(template.master_seed, which, n=n)
     indexed = [dict(p, **{_INDEX_KEY: i}) for i, p in enumerate(points)]
     config_fn = functools.partial(mini_candidate_config, which=which)
+    cache = _pretrain(
+        [
+            (i, size, config_fn(template, p, size, index=i, seeds=seeds, episodes=episodes))
+            for i, p in enumerate(points)
+            for size in sizes
+        ],
+        out_dir=out_dir,
+        n_checkpoints=n_checkpoints,
+        max_workers=max_workers,
+    )
     results = [
         run_candidate(
             template,
@@ -611,6 +716,7 @@ def run_mini_search(
             n_checkpoints=n_checkpoints,
             episodes=episodes,
             config_fn=config_fn,
+            csv_cache=cache,
         )
         for i, point in enumerate(points)
     ]
@@ -673,6 +779,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--candidates", type=int, default=None)
     ap.add_argument("--checkpoints", type=int, default=20)
     ap.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "parallel worker processes (default 1 = serial). Results are byte-identical to "
+            "serial at any worker count -- every stream derives from (master_seed, cell_id, "
+            "stream, seed_index), never from execution order."
+        ),
+    )
+    ap.add_argument(
         "--dry-run",
         action="store_true",
         help="draw and print the candidate field without executing any run",
@@ -708,6 +824,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_dir=out_dir,
             n=n,
             n_checkpoints=args.checkpoints,
+            max_workers=args.workers,
         )
     else:
         best, record = run_mini_search(
@@ -716,6 +833,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             out_dir=out_dir,
             n=n,
             n_checkpoints=args.checkpoints,
+            max_workers=args.workers,
         )
     path = record.write(record_path)
     print(
