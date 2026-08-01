@@ -54,9 +54,10 @@ treats the 6 runs as one sample rather than claiming independence between the tw
 
 from __future__ import annotations
 
+import functools
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -101,6 +102,44 @@ BACKBONE_FIXED: dict[str, Any] = {"buffer_capacity": 100_000, "optimizer": "adam
 #: insertion order, because the draw sequence *is* the search: a reordering would silently
 #: produce a different set of 12 candidates from the same master seed.
 DRAW_ORDER: tuple[str, ...] = ("lr", "batch_size", "target_update_period", "hidden_width")
+
+# --------------------------------------------------------------------------- #
+# Frozen class-3 mini-searches (Gap 2 / freeze item 2)
+# --------------------------------------------------------------------------- #
+
+#: Draws per class-3 mini-search. Gap 2: "``n_mini = 4`` draws each", at the same
+#: 3 seeds × 2 development sizes as the backbone, "identical count for every method so the
+#: equal-search-budget standard holds".
+N_MINI = 4
+
+#: The two frozen one-parameter searches. Each names the ``factor_specific`` key it varies,
+#: its distribution, and the cell whose IQM selects it. ``arm`` is the *evaluation* arm of
+#: that input cell, recorded for provenance only — the runs themselves execute under the
+#: ``tune|`` namespace, never under the evaluation arm (RNG fact 1).
+#:
+#: Both searches vary a single parameter, so freeze item 3's "ties → the lower parameter
+#: value" is literal here rather than the lexicographic reading the 4-D backbone needs.
+MINI_SEARCHES: dict[str, dict[str, Any]] = {
+    "prior_scale": {
+        "param": "prior_scale",
+        "space": {"kind": "log_uniform", "low": 0.1, "high": 10.0},
+        "arm": "episodic|on|K10",
+        "template": "configs/example_rpbdqn_deepsea_dev.yaml",
+        "shared_by": "all prior=on cells",
+    },
+    "eps_schedule": {
+        "param": "eps_end",
+        "space": {"kind": "log_uniform", "low": 0.005, "high": 0.1},
+        "arm": "ensemble_mean|off|K10",
+        "template": "configs/cell_ensemble_mean_off_K10_deepsea_dev.yaml",
+        "shared_by": "ensemble_mean_eps cells at both prior levels",
+    },
+}
+
+#: Fraction of the budget over which ε decays linearly. Gap 2 fixes this ("linear decay over
+#: the first 10% of the budget") and searches only the final ε, so it is a constant here, not
+#: a second search dimension.
+EPS_DECAY_BUDGET_FRACTION = 0.10
 
 #: Bookkeeping key carrying a candidate's draw position through ``selection``. Not a
 #: hyperparameter — excluded from :data:`DRAW_ORDER` so it never enters the tie-break, and
@@ -287,6 +326,91 @@ def candidate_config(
     return config_mod.resolve_config(data)
 
 
+def sample_mini_points(
+    master_seed: int,
+    which: str,
+    *,
+    n: int = N_MINI,
+) -> list[dict[str, Any]]:
+    """Draw the ``n`` class-3 candidates for mini-search ``which``.
+
+    Each mini-search has its own ``hparam_search`` stream, keyed by its own tuning
+    ``cell_id``, so the three searches are mutually independent draws: changing ``n_mini``
+    for one cannot shift the other's field or the backbone's.
+    """
+    if which not in MINI_SEARCHES:
+        raise ValueError(f"unknown mini-search {which!r}; expected one of {sorted(MINI_SEARCHES)}")
+    spec = MINI_SEARCHES[which]["space"]
+    rng = conventions.derive_numpy_generator(
+        master_seed, f"{TUNING_CELL_PREFIX}|{which}", "hparam_search", 0
+    )
+    param = MINI_SEARCHES[which]["param"]
+    points: list[dict[str, Any]] = []
+    for _ in range(n):
+        if spec["kind"] != "log_uniform":  # pragma: no cover - both frozen spaces are log-uniform
+            raise ValueError(f"unsupported class-3 distribution kind {spec['kind']!r}")
+        lo, hi = math.log(spec["low"]), math.log(spec["high"])
+        points.append({param: float(math.exp(rng.uniform(lo, hi)))})
+    return points
+
+
+def mini_candidate_config(
+    template: config_mod.RunConfig,
+    which: str,
+    point: Mapping[str, Any],
+    size: int,
+    *,
+    index: int,
+    seeds: Sequence[int] = TUNING_SEEDS,
+) -> config_mod.RunConfig:
+    """Materialize one (class-3 candidate, size) pair as a validated :class:`RunConfig`.
+
+    Same identity discipline as :func:`candidate_config`: the candidate index rides in
+    ``run_id`` only, and the tuning ``cell_id`` carries neither index nor size, so the four
+    candidates of a mini-search share environment instances (common random numbers) while
+    staying separable in the logs.
+
+    The one asymmetry with the backbone search is the ε case. Gap 2 searches only the
+    *final* ε and fixes the decay to "the first 10% of the budget", so ``eps_decay_steps``
+    is *derived* from the run's own step budget rather than drawn. It is computed per size
+    from :func:`config.step_budget`, which means the two sizes of one candidate get
+    different decay lengths — that is the intent, since 10% of a budget is a budget-relative
+    quantity, not a constant.
+    """
+    if which not in MINI_SEARCHES:
+        raise ValueError(f"unknown mini-search {which!r}; expected one of {sorted(MINI_SEARCHES)}")
+    data = json.loads(json.dumps(template.data))
+    data["run_id"] = f"tune_{which}_c{index:02d}_N{size}"
+    data["role"] = "exploratory"
+    data["arm"] = f"{TUNING_CELL_PREFIX}|{which}"
+    data.pop("cell_id", None)
+    data.pop("size_class", None)
+
+    budget = dict(data.get("env_budget") or {})
+    budget["deep_sea_size"] = int(size)
+    data["env_budget"] = budget
+    data["seeds"] = [int(s) for s in seeds]
+
+    factor = dict(data.get("factor_specific") or {})
+    if which == "prior_scale":
+        factor["prior_scale"] = float(point["prior_scale"])
+    else:
+        # DeepSea's step budget is exact, not estimated: every episode runs to the bottom
+        # row and terminates there, so an episode is always exactly ``size`` steps
+        # (test_deep_sea_episode_length_is_exactly_size pins this). ``config.step_budget``
+        # is not usable here — it reads ``env_budget.total_steps``, which only MinAtar runs
+        # carry; DeepSea is episode-budgeted.
+        total_steps = int(budget["episodes"]) * int(size)
+        eps_end = float(point["eps_end"])
+        factor["eps_schedule"] = {
+            "eps_start": 1.0,
+            "eps_end": eps_end,
+            "eps_decay_steps": max(1, int(round(EPS_DECAY_BUDGET_FRACTION * total_steps))),
+        }
+    data["factor_specific"] = factor
+    return config_mod.resolve_config(data)
+
+
 def run_candidate(
     template: config_mod.RunConfig,
     point: Mapping[str, Any],
@@ -296,8 +420,15 @@ def run_candidate(
     seeds: Sequence[int] = TUNING_SEEDS,
     sizes: Sequence[int] = DEV_SIZES,
     n_checkpoints: int = 20,
+    config_fn: Callable[..., config_mod.RunConfig] = candidate_config,
 ) -> dict[str, Any]:
     """Execute one candidate over all (size, seed) pairs and score it.
+
+    ``config_fn`` is the materializer — :func:`candidate_config` for the class-1 backbone,
+    a partial of :func:`mini_candidate_config` for a class-3 mini-search. Everything after
+    materialization (execution, per-run scoring, pooling, ordering) is identical across the
+    three searches by construction, which is the point of routing them through one function:
+    the mini-searches cannot silently acquire a different objective or pooling rule.
 
     Returns ``{"scores": [...], "per_run": {...}, "csvs": [...]}`` where ``scores`` is the
     pooled per-run objective vector — one entry per (size, seed) — in a deterministic
@@ -316,7 +447,7 @@ def run_candidate(
     csvs: list[str] = []
     ordered: list[tuple[int, int]] = []
     for size in sizes:
-        cfg = candidate_config(template, point, size, index=index, seeds=seeds)
+        cfg = config_fn(template, point, size, index=index, seeds=seeds)
         csv_path = trainer.train(cfg, out, n_checkpoints=n_checkpoints)
         csvs.append(str(csv_path))
         rows = _read_rows(csv_path)
@@ -425,23 +556,98 @@ def run_backbone_search(
     return best, record
 
 
+def run_mini_search(
+    template: config_mod.RunConfig,
+    which: str,
+    *,
+    out_dir: str | Path,
+    n: int = N_MINI,
+    seeds: Sequence[int] = TUNING_SEEDS,
+    sizes: Sequence[int] = DEV_SIZES,
+    n_checkpoints: int = 20,
+) -> tuple[selection.SelectionResult, SearchRecord]:
+    """Run one class-3 mini-search and select the winner.
+
+    Structurally identical to :func:`run_backbone_search` — same objective, same pooling,
+    same tie-break machinery, same auditable record — differing only in the candidate
+    field's dimensionality and the materializer. The tie-break key is the single varied
+    parameter, which is freeze item 3's "lower parameter value" read literally.
+    """
+    spec = MINI_SEARCHES[which]
+    param = spec["param"]
+    points = sample_mini_points(template.master_seed, which, n=n)
+    indexed = [dict(p, **{_INDEX_KEY: i}) for i, p in enumerate(points)]
+    config_fn = functools.partial(mini_candidate_config, which=which)
+    results = [
+        run_candidate(
+            template,
+            point,
+            index=i,
+            out_dir=out_dir,
+            seeds=seeds,
+            sizes=sizes,
+            n_checkpoints=n_checkpoints,
+            config_fn=config_fn,
+        )
+        for i, point in enumerate(points)
+    ]
+    candidates = selection.score_candidates(
+        indexed,
+        lambda p: results[p[_INDEX_KEY]]["scores"],
+        sort_key_fn=lambda p: (p[param],),
+        label_fn=lambda p: f"c{p[_INDEX_KEY]:02d}",
+    )
+    best = selection.select_best(candidates)
+    record = SearchRecord(
+        kind=f"class3_{which}",
+        master_seed=template.master_seed,
+        n_candidates=n,
+        seeds=tuple(int(s) for s in seeds),
+        sizes=tuple(int(s) for s in sizes),
+        objective="iqm_of_per_seed_discovery_auc",
+        points=[dict(p) for p in points],
+        per_candidate=[
+            {
+                "index": i,
+                "point": dict(points[i]),
+                "iqm": candidates[i].iqm,
+                "scores": results[i]["scores"],
+                "per_run": results[i]["per_run"],
+            }
+            for i in range(n)
+        ],
+        winner_index=int(best.winner.params[_INDEX_KEY]),
+        tie_broken=best.tie_broken,
+    )
+    return best, record
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI: run the class-1 backbone search and write the auditable record."""
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument(
-        "--template",
-        default="configs/example_ddqn_deepsea_dev.yaml",
-        help="ε-greedy DDQN config the search perturbs (freeze item 2: tuned on that backbone)",
+        "--kind",
+        default="backbone",
+        choices=["backbone", *sorted(MINI_SEARCHES)],
+        help="which frozen search to run: the class-1 backbone or a class-3 mini-search",
     )
-    ap.add_argument("--out", default="logs/search/backbone", help="run-log directory")
+    ap.add_argument(
+        "--template",
+        default=None,
+        help=(
+            "config the search perturbs; defaults per --kind to the ε-greedy DDQN backbone "
+            "template or the mini-search's own input cell"
+        ),
+    )
+    ap.add_argument("--out", default=None, help="run-log directory (default logs/search/<kind>)")
     ap.add_argument(
         "--record",
-        default="logs/search/backbone/search_record.json",
-        help="auditable search record (candidate field, per-run scores, winner)",
+        default=None,
+        help="auditable search record (default <out>/search_record.json)",
     )
-    ap.add_argument("--candidates", type=int, default=N_BACKBONE)
+    ap.add_argument("--candidates", type=int, default=None)
     ap.add_argument("--checkpoints", type=int, default=20)
     ap.add_argument(
         "--dry-run",
@@ -450,19 +656,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    template = config_mod.load_config(args.template)
+    is_backbone = args.kind == "backbone"
+    default_template = (
+        "configs/example_ddqn_deepsea_dev.yaml"
+        if is_backbone
+        else MINI_SEARCHES[args.kind]["template"]
+    )
+    template_path = args.template or default_template
+    out_dir = args.out or f"logs/search/{args.kind}"
+    record_path = args.record or f"{out_dir}/search_record.json"
+    n = args.candidates if args.candidates is not None else (N_BACKBONE if is_backbone else N_MINI)
+
+    template = config_mod.load_config(template_path)
     if args.dry_run:
-        for i, point in enumerate(sample_backbone_points(template.master_seed, n=args.candidates)):
-            print(f"c{i:02d} " + " ".join(f"{k}={point[k]}" for k in DRAW_ORDER))
+        if is_backbone:
+            points = sample_backbone_points(template.master_seed, n=n)
+            keys: tuple[str, ...] = DRAW_ORDER
+        else:
+            points = sample_mini_points(template.master_seed, args.kind, n=n)
+            keys = (MINI_SEARCHES[args.kind]["param"],)
+        for i, point in enumerate(points):
+            print(f"c{i:02d} " + " ".join(f"{k}={point[k]}" for k in keys))
         return 0
 
-    best, record = run_backbone_search(
-        template,
-        out_dir=args.out,
-        n=args.candidates,
-        n_checkpoints=args.checkpoints,
-    )
-    path = record.write(args.record)
+    if is_backbone:
+        best, record = run_backbone_search(
+            template,
+            out_dir=out_dir,
+            n=n,
+            n_checkpoints=args.checkpoints,
+        )
+    else:
+        best, record = run_mini_search(
+            template,
+            args.kind,
+            out_dir=out_dir,
+            n=n,
+            n_checkpoints=args.checkpoints,
+        )
+    path = record.write(record_path)
     print(
         f"winner {best.winner.label}: IQM={best.winning_iqm:.4f} "
         f"tie_broken={best.tie_broken} → {path}"

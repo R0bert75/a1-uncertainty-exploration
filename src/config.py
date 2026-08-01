@@ -579,6 +579,27 @@ def _build_bdqn(cfg, obs_dim, n_actions, backbone, factor, seed_index, obs_shape
             f"prior={cfg.prior!r} must not set factor_specific.prior_scale "
             "(the randomized prior only applies when prior: on)",
         )
+    # Class-3 ε schedule. Exactly the mirror of prior_scale above: ``ensemble_mean`` is the
+    # only use_rule whose acting consumes ε (bdqn.select_action L303), so it is the only one
+    # that may set a schedule, and the others must leave it unset rather than carry an
+    # inert value. Without this pass-through the field was silently dropped and the agent
+    # ran BDQNConfig's defaults — see the regression test for why that mattered.
+    eps = factor.get("eps_schedule")
+    if cfg.data["use_rule"] == "ensemble_mean":
+        _require(
+            isinstance(eps, dict),
+            "use_rule 'ensemble_mean' is the ε-greedy comparator and requires "
+            "factor_specific.eps_schedule (the Class-3 tunable of freeze item 2)",
+        )
+        for key in ("eps_start", "eps_end", "eps_decay_steps"):
+            if eps.get(key) is not None:
+                kwargs[key] = eps[key]
+    else:
+        _require(
+            eps is None,
+            f"use_rule={cfg.data['use_rule']!r} must not set factor_specific.eps_schedule "
+            "(only 'ensemble_mean' acts ε-greedily; a schedule here would be inert)",
+        )
     config = BDQNConfig(**kwargs)
     return BDQNAgent(
         config, master_seed=cfg.master_seed, cell_id=cfg.cell_id, seed_index=seed_index

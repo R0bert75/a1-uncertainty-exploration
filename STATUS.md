@@ -168,9 +168,22 @@ In order:
    discovery AUC) is *staged*, not yet written into the pre-registration, and the pre-registration
    is frozen pending the review window. Running the search before that lands is fine; **reporting**
    a selected backbone before it lands is what would make the objective look post-hoc.
-5. **Finish steps 7–9** — the two mini-searches and the diagnostics battery. Step 9 is now
-   simpler than planned: an exhaustive probe set needs no sampler and no `|S|` parameter.
-6. **Cut the final freeze tag**, apply the staged protocol fixes, mirror to OSF, then pilot.
+5. ~~Finish steps 7–9 — the two mini-searches~~ **Mini-searches done 2026-08-01.**
+   `make search-prior-scale` and `make search-eps-schedule` (24 runs each); `make search-all` runs
+   all 20 tuning candidates = 120 runs. Both route through the same execution, objective and
+   selection path as the backbone, so the three searches cannot diverge in method. Building step 8
+   surfaced a real defect: `_build_bdqn` never read `factor_specific.eps_schedule`, so the
+   `ensemble_mean` cells silently ran the agent's built-in default — the exact parameter this
+   mini-search tunes. Fixed and regression-tested; the search would otherwise have compared four
+   identically-behaving candidates and still emitted a winner.
+6. **Finish step 9** — the six remaining diagnostics. Simpler than planned twice over: an
+   exhaustive probe set needs no sampler and no `|S|` parameter, and with the substrate wired the
+   work is post-hoc analysis over committed sample files — no further runs, no trainer change.
+   Diagnostic 1 (marginal alignment) is the RQ2-L primary and comes first.
+7. **MinAtar clone/restore** — the only missing *capability* in the tree. Freeze item 20's
+   conditional cannot be evaluated in any direction without it, including the direction that
+   drops the analogue.
+8. **Cut the final freeze tag**, apply the staged protocol fixes, mirror to OSF, then pilot.
 
 **The critical path is now code plus one process action, and they are parallel.** Step 2 is pure
 calendar time; steps 3–5 are roughly a day of implementation that can proceed alongside it.

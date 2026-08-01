@@ -389,3 +389,167 @@ def test_search_module_does_not_import_torch_at_module_scope():
     head = source.split("def run_candidate", 1)[0]
     assert "import torch" not in head
     assert "from src import trainer" not in head
+
+
+# --------------------------------------------------------------------------- #
+# Class-3 mini-searches (steps 7 and 8)
+# --------------------------------------------------------------------------- #
+
+
+def test_mini_search_budget_and_shape():
+    """Gap 2: ``n_mini = 4`` draws each, one varied parameter each, two searches only."""
+    assert search.N_MINI == 4
+    assert set(search.MINI_SEARCHES) == {"prior_scale", "eps_schedule"}
+    for spec in search.MINI_SEARCHES.values():
+        assert spec["space"]["kind"] == "log_uniform"
+
+
+def test_mini_space_matches_the_staged_protocol_text():
+    """Same drift guard as the backbone: the class-3 distributions live in a document."""
+    doc = Path("protocol/decisions/staged_stage3_protocol_fixes.md").read_text()
+    for fragment in (
+        "`n_mini = 4` draws each",
+        "log-uniform\n> `[0.1, 10.0]`",
+        "final-ε log-uniform `[0.005, 0.1]`",
+        "linear decay over the first 10%",
+        "Ties broken by the lower parameter value.",
+    ):
+        assert fragment in doc, (
+            f"Gap 2 no longer states {fragment!r}; src/search.py's class-3 block may have drifted"
+        )
+    assert search.MINI_SEARCHES["prior_scale"]["space"] == {
+        "kind": "log_uniform",
+        "low": 0.1,
+        "high": 10.0,
+    }
+    assert search.MINI_SEARCHES["eps_schedule"]["space"] == {
+        "kind": "log_uniform",
+        "low": 0.005,
+        "high": 0.1,
+    }
+    assert search.EPS_DECAY_BUDGET_FRACTION == 0.10
+
+
+def test_mini_samples_respect_the_frozen_support():
+    for which, spec in search.MINI_SEARCHES.items():
+        param, dist = spec["param"], spec["space"]
+        for point in search.sample_mini_points(0, which, n=32):
+            assert dist["low"] <= point[param] <= dist["high"]
+            assert set(point) == {param}
+
+
+def test_the_three_searches_are_independent_draws():
+    """Each search keys its own ``hparam_search`` stream, so changing ``n`` for one cannot
+    shift another's field. Compared as raw floats: a shared stream would make these equal."""
+    a = [p["prior_scale"] for p in search.sample_mini_points(0, "prior_scale", n=8)]
+    b = [p["eps_end"] for p in search.sample_mini_points(0, "eps_schedule", n=8)]
+    c = [p["lr"] for p in search.sample_backbone_points(0, n=8)]
+    assert a != b and a != c and b != c
+
+
+def test_mini_tuning_streams_are_disjoint_from_their_input_cell():
+    """RNG fact 1, for the mini-searches: a candidate must not run under the evaluation arm
+    of the cell whose IQM selects it, or the parameter is chosen on the instances it is
+    later measured on."""
+    for which, spec in search.MINI_SEARCHES.items():
+        tmpl = config_mod.load_config(spec["template"])
+        cfg = search.mini_candidate_config(
+            tmpl, which, search.sample_mini_points(tmpl.master_seed, which)[0], 10, index=0
+        )
+        assert cfg.cell_id == f"tune|{which}"
+        assert cfg.cell_id != spec["arm"]
+        assert cfg.role == "exploratory"
+        for stream in ("init", "env_mapping", "replay", "action_noise"):
+            assert derive_seed(tmpl.master_seed, cfg.cell_id, stream, 0) != derive_seed(
+                tmpl.master_seed, spec["arm"], stream, 0
+            )
+
+
+def test_mini_candidates_share_random_numbers_but_stay_separable():
+    """Common random numbers across the 4 candidates (so the contrast is the parameter),
+    while ``run_id`` still separates their logs."""
+    for which, spec in search.MINI_SEARCHES.items():
+        tmpl = config_mod.load_config(spec["template"])
+        pts = search.sample_mini_points(tmpl.master_seed, which)
+        cfgs = [
+            search.mini_candidate_config(tmpl, which, p, 10, index=i) for i, p in enumerate(pts)
+        ]
+        assert len({c.cell_id for c in cfgs}) == 1
+        assert len({c.run_id for c in cfgs}) == len(pts)
+        assert len({c.config_sha256 for c in cfgs}) == len(pts)
+
+
+def test_mini_cell_id_encodes_neither_index_nor_size():
+    which = "prior_scale"
+    spec = search.MINI_SEARCHES[which]
+    tmpl = config_mod.load_config(spec["template"])
+    pts = search.sample_mini_points(tmpl.master_seed, which)
+    ids = {
+        search.mini_candidate_config(tmpl, which, pts[i], size, index=i).cell_id
+        for i in range(len(pts))
+        for size in search.DEV_SIZES
+    }
+    assert ids == {f"tune|{which}"}
+
+
+def test_eps_decay_is_ten_percent_of_each_size_budget():
+    """The decay length is *derived*, not drawn: 10% of that run's own step budget. DeepSea
+    episodes are exactly ``size`` steps, so the budget is ``episodes × size`` exactly."""
+    which = "eps_schedule"
+    tmpl = config_mod.load_config(search.MINI_SEARCHES[which]["template"])
+    point = search.sample_mini_points(tmpl.master_seed, which)[0]
+    for size in search.DEV_SIZES:
+        cfg = search.mini_candidate_config(tmpl, which, point, size, index=0)
+        episodes = cfg.data["env_budget"]["episodes"]
+        sched = cfg.data["factor_specific"]["eps_schedule"]
+        assert sched["eps_decay_steps"] == round(0.10 * episodes * size)
+        assert sched["eps_end"] == point["eps_end"]
+        assert sched["eps_start"] == 1.0
+
+
+def test_deep_sea_episode_length_is_exactly_size():
+    """The identity the derived decay depends on. If DeepSea ever gains truncation or a
+    variable-length episode, ``episodes × size`` stops being the step budget and the ε
+    schedule silently changes meaning."""
+    from src.deep_sea import DeepSea
+
+    for size in search.DEV_SIZES:
+        env = DeepSea(size=size, master_seed=0, cell_id="tune|eps_schedule", seed_index=0)
+        env.reset()
+        steps, done = 0, False
+        while not done:
+            _, _, term, trunc, _ = env.step(steps % 2)
+            steps += 1
+            done = term or trunc
+        assert steps == size
+
+
+def test_mini_search_configs_build_real_agents():
+    """End-to-end: the drawn value must reach the agent, not just the config dict."""
+    tmpl = config_mod.load_config(search.MINI_SEARCHES["prior_scale"]["template"])
+    point = search.sample_mini_points(tmpl.master_seed, "prior_scale")[0]
+    cfg = search.mini_candidate_config(tmpl, "prior_scale", point, 10, index=0)
+    agent = config_mod.build_agent(cfg, 0)
+    assert agent.cfg.prior_scale == pytest.approx(point["prior_scale"])
+
+    tmpl = config_mod.load_config(search.MINI_SEARCHES["eps_schedule"]["template"])
+    point = search.sample_mini_points(tmpl.master_seed, "eps_schedule")[0]
+    cfg = search.mini_candidate_config(tmpl, "eps_schedule", point, 10, index=0)
+    agent = config_mod.build_agent(cfg, 0)
+    assert agent.cfg.eps_end == pytest.approx(point["eps_end"])
+    assert agent.cfg.eps_decay_steps == cfg.data["factor_specific"]["eps_schedule"][
+        "eps_decay_steps"
+    ]
+
+
+def test_unknown_mini_search_name_raises():
+    with pytest.raises(ValueError, match="unknown mini-search"):
+        search.sample_mini_points(0, "not_a_search")
+
+
+def test_mini_cli_dry_run(capsys):
+    for which, spec in search.MINI_SEARCHES.items():
+        assert search.main(["--kind", which, "--dry-run"]) == 0
+        lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("c")]
+        assert len(lines) == search.N_MINI
+        assert spec["param"] in lines[0]

@@ -40,9 +40,15 @@ def _cfg(method: str = "ddqn_egreedy", episodes: int = 40, size: int = 6):
             "target_update_period": 40,
             "buffer_capacity": 4000,
         },
-        "factor_specific": {
-            "eps_schedule": {"eps_start": 1.0, "eps_end": 0.05, "eps_decay_steps": 200}
-        },
+        # ε is consumed by the ε-greedy DDQN baseline and by BDQN's ``ensemble_mean`` use_rule
+        # only. This helper builds ``episodic`` ensembles, whose acting is head sampling, so a
+        # schedule here would be inert — and config.py rejects inert ones rather than let a
+        # config advertise a tuned parameter that never reaches the agent.
+        "factor_specific": (
+            {"eps_schedule": {"eps_start": 1.0, "eps_end": 0.05, "eps_decay_steps": 200}}
+            if method == "ddqn_egreedy"
+            else {}
+        ),
         "env_budget": {"deep_sea_size": size, "episodes": episodes},
         "seeds": [0, 1],
     }

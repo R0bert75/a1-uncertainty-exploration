@@ -453,3 +453,73 @@ def test_run_context_feeds_csv_logger(tmp_path):
         log.log(step=100, metric="episode_return", value=0.0)
     text = csv_path.read_text()
     assert cfg.config_sha256 in text and "episode_return" in text
+
+
+# --------------------------------------------------------------------------- #
+# Class-3 ε schedule pass-through (regression: it was silently dropped)
+# --------------------------------------------------------------------------- #
+
+
+def _base_dev_ensemble_mean() -> dict:
+    """The ε-greedy ensemble-mean comparator cell — the only use_rule that consumes ε."""
+    d = _base_dev_bdqn()
+    d.update(
+        run_id="t_ensemble_mean_dev",
+        use_rule="ensemble_mean",
+        arm="ensemble_mean|off|K5",
+        factor_specific={
+            "prior_scale": None,
+            "eps_schedule": {"eps_start": 1.0, "eps_end": 0.02, "eps_decay_steps": 1234},
+        },
+    )
+    return d
+
+
+def test_eps_schedule_reaches_the_ensemble_mean_agent():
+    """REGRESSION. ``_build_bdqn`` used to ignore ``factor_specific.eps_schedule`` entirely,
+    so a cell asking for ``eps_decay_steps: 3000`` silently ran BDQNConfig's 10,000 default.
+    That is precisely the parameter step 8's mini-search tunes, so the search would have
+    compared four candidates that all behaved identically — measuring nothing but noise.
+    The assertion is against values that differ from every BDQNConfig default."""
+    from src.bdqn import BDQNConfig
+
+    cfg = resolve_config(_base_dev_ensemble_mean())
+    agent = build_agent(cfg, 0)
+    assert agent.cfg.eps_end == 0.02
+    assert agent.cfg.eps_decay_steps == 1234
+    assert (agent.cfg.eps_end, agent.cfg.eps_decay_steps) != (
+        BDQNConfig.eps_end,
+        BDQNConfig.eps_decay_steps,
+    )
+
+
+def test_ensemble_mean_requires_an_eps_schedule():
+    d = _base_dev_ensemble_mean()
+    d["factor_specific"] = {"prior_scale": None, "eps_schedule": None}
+    with pytest.raises(ConfigError, match="requires factor_specific.eps_schedule"):
+        build_agent(resolve_config(d), 0)
+
+
+def test_non_ensemble_mean_use_rules_must_not_set_an_eps_schedule():
+    """An ε schedule on ``episodic``/``per_step`` is inert — those act by head sampling.
+    Carrying one would look like a tuned parameter that has no effect on the run."""
+    d = _base_dev_bdqn()
+    d["factor_specific"] = {
+        "prior_scale": None,
+        "eps_schedule": {"eps_start": 1.0, "eps_end": 0.02, "eps_decay_steps": 1234},
+    }
+    with pytest.raises(ConfigError, match="must not set factor_specific.eps_schedule"):
+        build_agent(resolve_config(d), 0)
+
+
+def test_committed_ensemble_mean_cells_honour_their_declared_schedule():
+    """The two committed ``ensemble_mean`` cells are the mini-search's input population."""
+    for name in (
+        "configs/cell_ensemble_mean_off_K10_deepsea_dev.yaml",
+        "configs/cell_ensemble_mean_on_K10_deepsea_dev.yaml",
+    ):
+        cfg = load_config(name)
+        declared = cfg.data["factor_specific"]["eps_schedule"]
+        agent = build_agent(cfg, 0)
+        assert agent.cfg.eps_end == declared["eps_end"]
+        assert agent.cfg.eps_decay_steps == declared["eps_decay_steps"]

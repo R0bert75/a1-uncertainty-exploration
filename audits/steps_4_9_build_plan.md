@@ -16,8 +16,8 @@ below is an absent symbol or absent config, not an impression.
 | 4. 5-seed baseline + wall-clock | 2 | 2 | none — code complete; no 5-seed run committed |
 | 5. Switchboard + backbone tuning + disagreement | 4 | 4 | ~~none — all four closed 2026-08-01~~ (see §5; the row as first written said "6 of 10 cells", the true count was 8 of 10) |
 | 6. DeepSea dev sizes + solve-vs-depth | 2 | 1 | figure; needs step-5 runs first |
-| 7. Priors + `prior_scale` mini-search | 2 | 1 | mini-search (reuses step-5 driver) |
-| 8. NoisyNet + `eps_schedule` mini-search | 3 | 2 | mini-search driver only — ~~its objective's input cell does not exist~~ **that cell was committed at `b0f63ef`; this row was stale** |
+| 7. Priors + `prior_scale` mini-search | 2 | 2 | none — code complete; no runs committed |
+| 8. NoisyNet + `eps_schedule` mini-search | 3 | 3 | none — code complete; no runs committed. ~~input cell does not exist~~ (committed `b0f63ef`) |
 | 9. RQ2-Q battery | 10 | 4 | 6 of 9 diagnostics; #8 needs MinAtar clone/restore; ~~trainer never calls the substrate~~ **wired at `0d6df0b`; this row was stale** |
 
 **One artefact unblocks four steps.** Steps 5, 7, 8 and (transitively) 6 all wait on a single
@@ -223,9 +223,14 @@ across N, so it follows 5a rather than blocking it. Must carry a "pilot" label p
 
 ## Step 7 — Randomized priors + `prior_scale` mini-search
 
-`rp_bdqn` is implemented and `prior_scale: 3.0` sits in the configs as a **declared placeholder**.
-The mini-search is `n_mini = 4` candidates and its objective **is** pinned, so once 5a exists this
-step is nearly free. Its input cell `(episodic, on, 10)` is one of the two that already has a config.
+**BUILT 2026-08-01** — `make search-prior-scale`. `run_mini_search(template, "prior_scale")` draws
+`n_mini = 4` from log-uniform `[0.1, 10.0]` and routes them through the *same* `run_candidate`,
+objective, pooling and selection path as the backbone search, so the three searches cannot diverge
+in method. `prior_scale: 3.0` remains a declared placeholder in the configs until the pass runs.
+
+> As predicted, "nearly free once 5a exists" — but the entry's claim that its objective **is**
+> pinned was wrong in the same way step 8's was: the clause names a cell and a size set, not an
+> outcome. Gap 4's sub-clause supplies the outcome for all three searches.
 
 ---
 
@@ -238,6 +243,23 @@ step is nearly free. Its input cell `(episodic, on, 10)` is one of the two that 
 > step's objective "is pinned"; Gap 4 later established that the `(mean_eps, off, 10)` clause names
 > a cell and a size set but **never an outcome**, exactly like the backbone clause — so its
 > objective was *not* pinned either, and it is the Gap 4 discovery-AUC sub-clause that supplies one.
+
+**BUILT 2026-08-01** — `make search-eps-schedule`. Draws final ε from log-uniform `[0.005, 0.1]`;
+`eps_decay_steps` is *derived*, not drawn (Gap 2 fixes decay at "the first 10% of the budget"), and
+is computed per size as `0.10 × episodes × size`. That product is exact rather than an estimate:
+every DeepSea episode runs to the bottom row, so an episode is exactly `size` steps — pinned by
+`test_deep_sea_episode_length_is_exactly_size`, because if the env ever gains truncation the ε
+schedule silently changes meaning. `config.step_budget` is *not* usable here; it reads
+`env_budget.total_steps`, which only MinAtar runs carry.
+
+> **A defect this step surfaced, now fixed.** `_build_bdqn` never read
+> `factor_specific.eps_schedule`. Every `ensemble_mean` cell asking for `eps_decay_steps: 3000`
+> silently ran `BDQNConfig`'s 10,000 default. Since `eps_schedule` is exactly what this
+> mini-search tunes, the four candidates would have behaved identically and the search would have
+> measured nothing but seed noise — while still emitting a confident winner. Fixed as the mirror of
+> the `prior_scale` handling directly above it in `_build_bdqn`: `ensemble_mean` (the only use_rule
+> whose acting consumes ε) now *requires* a schedule, and the others must leave it unset rather
+> than carry an inert value. Four regression tests in `tests/test_config.py`.
 
 <details>
 <summary>Original entry as first written (2026-07-31)</summary>
@@ -331,10 +353,9 @@ post-hoc analysis. Nothing further is blocked on a decision.** What remains:
 
 1. **Run the backbone tuning pass** — `make search-backbone`, 72 runs. Compute, not code. Produces
    the tuned DDQN backbone every later comparison is defined against, so it gates 6, 7 and 8.
-2. **Generalize the driver to the two class-3 mini-searches** (`n_mini = 4`, one varied parameter
-   each) — steps 7 and 8, now symmetric. Small: the sampling, scoring, tie-break and record
-   machinery all already exist; what is missing is a one-parameter entry point and the two
-   objectives' input cells, which are committed.
+2. ~~**Generalize the driver to the two class-3 mini-searches.**~~ **DONE 2026-08-01** —
+   `make search-prior-scale`, `make search-eps-schedule`, `make search-all`. All three searches
+   share one execution/objective/selection path.
 3. **Step 6's solve-vs-depth figure** — needs the runs from (1), must carry a "pilot" label.
 4. **Step 9's six missing diagnostics** — pure post-hoc analysis over the committed `.npz` files;
    no trainer change, no extra runs. Diagnostic 1 (marginal alignment) is the RQ2-L primary and

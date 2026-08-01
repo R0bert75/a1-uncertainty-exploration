@@ -42,12 +42,21 @@ audit:  ## Run the C13 configuration-identity audit over the committed cell conf
 audit-runs:  ## Run C13 over executed runs' resolved_config.json (Session 4+; needs runs)
 	PYTHONPATH=. $(PYTHON) audits/c13_audit.py --configs $(LOGS) --mode runs --out audits/c13
 
-search-dry:  ## Print the pre-registered class-1 backbone candidate field (no runs)
-	PYTHONPATH=. $(PYTHON) -m src.search --dry-run
+search-dry:  ## Print all three pre-registered candidate fields (no runs)
+	PYTHONPATH=. $(PYTHON) -m src.search --kind backbone --dry-run
+	PYTHONPATH=. $(PYTHON) -m src.search --kind prior_scale --dry-run
+	PYTHONPATH=. $(PYTHON) -m src.search --kind eps_schedule --dry-run
 
-search-backbone:  ## Run the class-1 backbone search: 12 candidates x 3 seeds x 2 sizes = 72 runs
-	PYTHONPATH=. $(PYTHON) -m src.search --out $(LOGS)/search/backbone \
-		--record $(LOGS)/search/backbone/search_record.json
+search-backbone:  ## Class-1 backbone search: 12 candidates x 3 seeds x 2 sizes = 72 runs
+	PYTHONPATH=. $(PYTHON) -m src.search --kind backbone
+
+search-prior-scale:  ## Class-3 mini-search (step 7): 4 candidates x 3 seeds x 2 sizes = 24 runs
+	PYTHONPATH=. $(PYTHON) -m src.search --kind prior_scale
+
+search-eps-schedule:  ## Class-3 mini-search (step 8): 4 candidates x 3 seeds x 2 sizes = 24 runs
+	PYTHONPATH=. $(PYTHON) -m src.search --kind eps_schedule
+
+search-all: search-backbone search-prior-scale search-eps-schedule  ## All 20 tuning candidates (120 runs)
 
 ci-parity:  ## Run the workflow's inline assertion steps locally (they are not in pytest)
 	PYTHONPATH=. python audits/ci_parity_check.py
