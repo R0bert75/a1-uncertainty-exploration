@@ -13,7 +13,7 @@ below is an absent symbol or absent config, not an impression.
 
 | Step | Required | Exists | Blocking gap |
 |---|---|---|---|
-| 4. 5-seed baseline + wall-clock | 2 | 2 | none — code complete, never run |
+| 4. 5-seed baseline + wall-clock | 2 | 2 | none — code complete; no 5-seed run committed |
 | 5. Switchboard + backbone tuning + disagreement | 4 | 1 | **sweep driver**; tuning objective unspecified; disagreement logging; 6 of 10 cells |
 | 6. DeepSea dev sizes + solve-vs-depth | 2 | 1 | figure; needs step-5 runs first |
 | 7. Priors + `prior_scale` mini-search | 2 | 1 | mini-search (reuses step-5 driver) |
@@ -35,10 +35,31 @@ single body of work.
 `_write_compute_sidecar` writes per-seed wall-clock to `<run_id>.compute.json`, deliberately outside
 the metrics CSV so gate C1's byte-exact re-run property survives.
 
-**Gap: not code — data.** `logs/` contains only `dummy_smoke.csv`. Per-method wall-clock is a
-**descope-ladder trigger input** (spec §8 item 4) and feeds the freeze item 4 cap-X formula, so
-until a real 5-seed run exists both triggers are un-evaluable. This is the cheapest item on the
-list and should be run first, on DeepSea N=10.
+**Gap: not code — data.** The committed `logs/` holds only `dummy_smoke.csv`; no run at the
+required 5 seeds exists, and no per-method wall-clock is persisted in the repository for **any**
+method.
+
+One real measurement was taken this session and then lost to the workspace sweep — the
+DDQN-on-Breakout smoke run (`smoke_ddqn_breakout`, cell `episodic|off|K1`, 3 seeds × 30 000 steps).
+Recording it here because it is the project's only empirical timing figure and it feeds the cap-X
+formula:
+
+| quantity | value |
+|---|---|
+| per-seed wall-clock | 405.7 / 371.3 / 358.6 s (mean **378.5 s**) |
+| total | 1135.6 s for 90 000 env steps |
+| throughput | **≈ 79 env-steps/s per seed**, 8-core CPU, no GPU |
+| extrapolated | 0.35 h/seed at 100 k steps; **3.5 h/seed at 1 M steps** |
+
+That is one method on one MinAtar game at 3 seeds. It does **not** satisfy step 4, which needs
+5 seeds and *per-method* figures across all four arms — but it does mean the cap-X input is no
+longer a total unknown, and the 1 M-step extrapolation is worth reading before the confirmatory
+tier is scheduled. The step-4 run itself is the cheapest item on this list and should go first,
+on DeepSea N=10.
+
+**Process note:** the smoke run's CSV and `.compute.json` went to `dev_battery/`, which is
+`.gitignore`d, so the numbers survived only in the session transcript. Whatever produces the step-4
+figures must commit them under `logs/`.
 
 ---
 
