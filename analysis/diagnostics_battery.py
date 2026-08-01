@@ -431,6 +431,7 @@ def run_battery_over_run(
     """
     from src.deep_sea import DeepSea
     from src.diagnostics.samplers import deep_sea_probe_states
+    from src.utils import conventions
 
     data = np.load(Path(npz_path))
     samples = data["samples"]  # [T, S, M, A]
@@ -465,6 +466,7 @@ def run_battery_over_run(
         "cell_id": str(cell_id),
         "seed_index": int(seed_index),
         "mapping_hash": env.mapping_hash,  # lets a consumer verify Q* matches the run
+        "code_version": conventions.code_version(),  # which reducer source produced these numbers
         "gamma": float(gamma),
         "n_checkpoints": len(checkpoints),
         "checkpoints": checkpoints,

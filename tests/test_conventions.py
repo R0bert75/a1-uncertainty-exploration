@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from src.utils.conventions import (  # noqa: E402
     STREAM_NAMES,
     CSVLogger,
     RunContext,
+    code_version,
     config_hash,
     deepsea_action_mapping,
     deepsea_mapping_hash,
@@ -262,3 +264,41 @@ def test_csv_append_preserves_single_header(tmp_path):
     lines = out.read_text().splitlines()
     assert lines[0].startswith("run_id,")
     assert sum(1 for ln in lines if ln.startswith("run_id,")) == 1  # exactly one header
+
+
+class TestCodeVersion:
+    """Provenance: which code produced a result, not just which config.
+
+    Added after the backbone sweep shipped without it — that sweep's code version had to be
+    recovered from the launcher's stdout instead of from the result file.
+    """
+
+    def test_reports_the_current_commit_and_clean_flag(self):
+        cv = code_version()
+        assert cv["reason"] if cv["commit"] is None else True
+        if cv["commit"] is not None:
+            assert len(cv["commit"]) == 40 and all(c in "0123456789abcdef" for c in cv["commit"])
+            assert isinstance(cv["dirty"], bool)
+
+    def test_dirty_is_true_when_the_tree_has_uncommitted_changes(self, tmp_path):
+        """``dirty`` is the load-bearing half: a dirty tree means the commit does NOT
+        determine the result, so it must not silently read as clean."""
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
+        (tmp_path / "a.txt").write_text("one")
+        subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "init"], check=True)
+
+        clean = code_version(tmp_path)
+        assert clean["dirty"] is False and clean["commit"] is not None
+
+        (tmp_path / "a.txt").write_text("two")  # uncommitted edit
+        dirty = code_version(tmp_path)
+        assert dirty["dirty"] is True
+        assert dirty["commit"] == clean["commit"], "same commit, different tree — that's the point"
+
+    def test_records_absence_explicitly_rather_than_a_false_clean(self, tmp_path):
+        """A non-repo must not report dirty=False, which would read as 'reproducible'."""
+        cv = code_version(tmp_path / "not_a_repo")
+        assert cv["commit"] is None and cv["dirty"] is None and cv["reason"]

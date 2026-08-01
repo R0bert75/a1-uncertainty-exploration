@@ -277,6 +277,8 @@ class SearchRecord:
             "winner_index": self.winner_index,
             "winner": self.points[self.winner_index] if self.points else None,
             "tie_broken": self.tie_broken,
+            # Which CODE produced this, not just which config: see conventions.code_version.
+            "code_version": conventions.code_version(),
         }
 
     def write(self, path: str | Path) -> Path:

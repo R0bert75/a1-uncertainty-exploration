@@ -1,4 +1,9 @@
 {
+  "code_version": {
+    "commit": "731e0b231fc8d8c9f775ead34bbc6c460652f3ec",
+    "dirty": false,
+    "reason": "backfilled 2026-08-01: this sweep predates conventions.code_version(), so the field was not written at run time. The value is recovered from the launcher's stdout, which recorded HEAD=731e0b2 with a clean tree at launch. Later sweeps record this themselves; this one entry is reconstructed, not measured."
+  },
   "kind": "class1_backbone",
   "master_seed": 0,
   "n_candidates": 12,

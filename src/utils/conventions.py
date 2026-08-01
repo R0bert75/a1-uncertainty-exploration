@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import random
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -443,3 +444,37 @@ class CSVLogger:
             self._fh.close()
             self._fh = None
             self._writer = None
+
+
+def code_version(repo_root: str | os.PathLike | None = None) -> dict[str, Any]:
+    """Which code produced a result: the git commit, and whether the tree was dirty.
+
+    Every result this project publishes is defended by "you can reproduce it from the repo",
+    but a result file that records only its *config* hash does not say which *code* consumed
+    that config. Two runs with a byte-identical resolved config and different reducer or
+    trainer source are different experiments, and without this field nothing in the artifact
+    distinguishes them. The gap was found after the backbone sweep had already been committed:
+    that sweep's provenance had to be recovered from the launcher's stdout, which is exactly
+    the recovery path this makes unnecessary.
+
+    ``dirty`` is the load-bearing half. A clean tree means the commit alone reproduces the
+    run; ``dirty: true`` means uncommitted edits were live and the commit does **not** fully
+    determine the result, so the run should be treated as non-reproducible and re-run from a
+    clean tree before its numbers are published.
+
+    Returns ``{"commit": None, "dirty": None, "reason": ...}`` when git is unavailable or the
+    path is not a repository -- absence is recorded explicitly rather than as a false clean.
+    """
+    root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[2]
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"commit": None, "dirty": None, "reason": f"git unavailable: {type(exc).__name__}"}
+    return {"commit": commit, "dirty": bool(status.strip())}
