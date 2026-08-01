@@ -11,8 +11,6 @@ Design principles:
 from __future__ import annotations
 
 import math
-from dataclasses import asdict
-from typing import Any
 
 import numpy as np
 import pytest
@@ -108,7 +106,7 @@ class TestDeduplicateStarts:
 
     def test_all_unique(self):
         obs_list = [self._obs(float(i)) for i in range(5)]
-        snaps = [{f"snap": i} for i in range(5)]
+        snaps = [{"snap": i} for i in range(5)]
         unique_obs, unique_snaps = deduplicate_starts(obs_list, snaps)
         assert unique_obs.shape[0] == 5
         assert len(unique_snaps) == 5
