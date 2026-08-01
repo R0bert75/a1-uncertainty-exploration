@@ -1,0 +1,25 @@
+tune_backbone_c01_N10: 3 seeds, 2/3 discovered → logs/search/backbone/tune_backbone_c01_N10.csv
+tune_backbone_c04_N10: 3 seeds, 2/3 discovered → logs/search/backbone/tune_backbone_c04_N10.csv
+tune_backbone_c05_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c05_N20.csv
+tune_backbone_c01_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c01_N20.csv
+tune_backbone_c06_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c06_N20.csv
+tune_backbone_c11_N10: 3 seeds, 1/3 discovered → logs/search/backbone/tune_backbone_c11_N10.csv
+tune_backbone_c00_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c00_N20.csv
+tune_backbone_c03_N10: 3 seeds, 2/3 discovered → logs/search/backbone/tune_backbone_c03_N10.csv
+tune_backbone_c04_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c04_N20.csv
+tune_backbone_c09_N10: 3 seeds, 1/3 discovered → logs/search/backbone/tune_backbone_c09_N10.csv
+tune_backbone_c10_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c10_N20.csv
+tune_backbone_c03_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c03_N20.csv
+tune_backbone_c07_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c07_N20.csv
+tune_backbone_c00_N10: 3 seeds, 1/3 discovered → logs/search/backbone/tune_backbone_c00_N10.csv
+tune_backbone_c06_N10: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c06_N10.csv
+tune_backbone_c08_N10: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c08_N10.csv
+tune_backbone_c10_N10: 3 seeds, 1/3 discovered → logs/search/backbone/tune_backbone_c10_N10.csv
+tune_backbone_c11_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c11_N20.csv
+tune_backbone_c02_N10: 3 seeds, 2/3 discovered → logs/search/backbone/tune_backbone_c02_N10.csv
+tune_backbone_c05_N10: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c05_N10.csv
+tune_backbone_c07_N10: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c07_N10.csv
+tune_backbone_c09_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c09_N20.csv
+tune_backbone_c02_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c02_N20.csv
+tune_backbone_c08_N20: 3 seeds, 0/3 discovered → logs/search/backbone/tune_backbone_c08_N20.csv
+winner c01: IQM=0.1583 tie_broken=False → logs/search/backbone/search_record.json

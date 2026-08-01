@@ -1,0 +1,413 @@
+{
+  "kind": "class1_backbone",
+  "master_seed": 0,
+  "n_candidates": 12,
+  "objective": "iqm_of_per_seed_discovery_auc",
+  "per_candidate": [
+    {
+      "index": 0,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.95,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 128,
+        "hidden_width": 256,
+        "lr": 0.0012925464385285313,
+        "target_update_period": 500
+      },
+      "scores": [
+        0.0,
+        0.95,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 1,
+      "iqm": 0.1583333333333334,
+      "per_run": {
+        "N10_s0": 0.95,
+        "N10_s1": 0.95,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 128,
+        "hidden_width": 64,
+        "lr": 0.0006053963406390405,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.95,
+        0.95,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 2,
+      "iqm": 0.14166666666666672,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.85,
+        "N10_s2": 0.9,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 128,
+        "hidden_width": 128,
+        "lr": 0.00024714173096126806,
+        "target_update_period": 1000
+      },
+      "scores": [
+        0.0,
+        0.85,
+        0.9,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 3,
+      "iqm": 0.1333333333333334,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.8,
+        "N10_s2": 0.9,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 64,
+        "hidden_width": 128,
+        "lr": 0.00010378937166368439,
+        "target_update_period": 1000
+      },
+      "scores": [
+        0.0,
+        0.8,
+        0.9,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 4,
+      "iqm": 0.15000000000000008,
+      "per_run": {
+        "N10_s0": 0.9,
+        "N10_s1": 0.95,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 32,
+        "hidden_width": 128,
+        "lr": 0.0010911199108153621,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.9,
+        0.95,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 5,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 32,
+        "hidden_width": 256,
+        "lr": 0.0005519549367173441,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 6,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 64,
+        "hidden_width": 128,
+        "lr": 0.009751245730335206,
+        "target_update_period": 500
+      },
+      "scores": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 7,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 32,
+        "hidden_width": 256,
+        "lr": 0.004195514619651886,
+        "target_update_period": 1000
+      },
+      "scores": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 8,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.0,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 32,
+        "hidden_width": 256,
+        "lr": 0.003165255955164294,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 9,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.9,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 128,
+        "hidden_width": 128,
+        "lr": 0.001258513726985602,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 10,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.75,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 32,
+        "hidden_width": 64,
+        "lr": 0.0010008040370137199,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.75,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "index": 11,
+      "iqm": 0.0,
+      "per_run": {
+        "N10_s0": 0.9,
+        "N10_s1": 0.0,
+        "N10_s2": 0.0,
+        "N20_s0": 0.0,
+        "N20_s1": 0.0,
+        "N20_s2": 0.0
+      },
+      "point": {
+        "batch_size": 64,
+        "hidden_width": 64,
+        "lr": 0.0006828398933744093,
+        "target_update_period": 100
+      },
+      "scores": [
+        0.9,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  ],
+  "points": [
+    {
+      "batch_size": 128,
+      "hidden_width": 256,
+      "lr": 0.0012925464385285313,
+      "target_update_period": 500
+    },
+    {
+      "batch_size": 128,
+      "hidden_width": 64,
+      "lr": 0.0006053963406390405,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 128,
+      "hidden_width": 128,
+      "lr": 0.00024714173096126806,
+      "target_update_period": 1000
+    },
+    {
+      "batch_size": 64,
+      "hidden_width": 128,
+      "lr": 0.00010378937166368439,
+      "target_update_period": 1000
+    },
+    {
+      "batch_size": 32,
+      "hidden_width": 128,
+      "lr": 0.0010911199108153621,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 32,
+      "hidden_width": 256,
+      "lr": 0.0005519549367173441,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 64,
+      "hidden_width": 128,
+      "lr": 0.009751245730335206,
+      "target_update_period": 500
+    },
+    {
+      "batch_size": 32,
+      "hidden_width": 256,
+      "lr": 0.004195514619651886,
+      "target_update_period": 1000
+    },
+    {
+      "batch_size": 32,
+      "hidden_width": 256,
+      "lr": 0.003165255955164294,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 128,
+      "hidden_width": 128,
+      "lr": 0.001258513726985602,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 32,
+      "hidden_width": 64,
+      "lr": 0.0010008040370137199,
+      "target_update_period": 100
+    },
+    {
+      "batch_size": 64,
+      "hidden_width": 64,
+      "lr": 0.0006828398933744093,
+      "target_update_period": 100
+    }
+  ],
+  "runs_per_candidate": 6,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "sizes": [
+    10,
+    20
+  ],
+  "tie_broken": false,
+  "total_runs": 72,
+  "winner": {
+    "batch_size": 128,
+    "hidden_width": 64,
+    "lr": 0.0006053963406390405,
+    "target_update_period": 100
+  },
+  "winner_index": 1
+}
