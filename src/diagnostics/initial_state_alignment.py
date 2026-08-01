@@ -47,7 +47,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from typing import Callable, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -219,7 +220,7 @@ def deduplicate_starts(
     seen: dict[bytes, int] = {}
     unique_obs: list[np.ndarray] = []
     unique_snaps: list[dict] = []
-    for obs, snap in zip(observations, snapshots):
+    for obs, snap in zip(observations, snapshots, strict=True):
         key = np.asarray(obs).tobytes()
         if key not in seen:
             seen[key] = len(unique_obs)
