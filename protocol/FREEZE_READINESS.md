@@ -24,7 +24,9 @@
 > channel for incorporating them. Two consequential edits ride along at stage 3: item 1's phrase
 > "8 non-overlapping derived streams" becomes **9** (`hparam_search` added to `STREAM_NAMES` on
 > main, with a pinned-bytes test proving no already-derived seed shifted), and §3.4's DeepSea
-> development budget should note the 230-run composition (110 cell + 120 tuning).
+> development budget should note the 240-run composition (120 cell + 120 tuning; the cell figure
+> was corrected from 110 on 2026-08-01 — the ε-greedy DDQN reference is an eleventh arm, not one
+> of the ten factorial cells).
 >
 > **Consequence for this document's verdict: unchanged.** The missing values were never one of
 > the three gates. Gates 1–3 below are still the binding constraints, and all three remain

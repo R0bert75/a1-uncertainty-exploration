@@ -205,9 +205,15 @@ support**, so the conditional cannot currently be evaluated in any direction.
 
 The approved 120 runs covers **all 20 tuning candidates**, not the backbone alone:
 12 backbone + 4 `prior_scale` + 4 `eps_schedule` = 20, at 3 seeds × 2 development sizes = 6 runs
-each. The backbone search's own share is **72 runs**; the two mini-searches are 24 each. Development
-tier total 110 + 120 = **230**, inside the 150–250 envelope. No discrepancy — the figure in the
-sign-off note is right, and step 5a's cost is 72 of it.
+each. The backbone search's own share is **72 runs**; the two mini-searches are 24 each. No
+discrepancy — the figure in the sign-off note is right, and step 5a's cost is 72 of it.
+
+The **dev-cell** side of the total, however, was wrong here and everywhere it appeared, and is
+corrected as of `b0f63ef`: it is **120**, not 110. The old count charged only ten arms because it
+treated the ε-greedy DDQN reference `(episodic|off|K1)` as one of the ten factorial cells; it is
+an eleventh arm outside the switchboard, so nine non-rule-input cells are charged at 2 sizes × 5
+seeds and two rule-input arms at 10 + 5. Development tier total **120 + 120 = 240**, still inside
+the 150–250 envelope but with 10 runs of slack rather than 20.
 
 ---
 

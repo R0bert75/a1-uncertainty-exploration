@@ -230,23 +230,48 @@ tier are the `K_shared` sweep and the per-game backbone confirmation:
 confirmation pass is run at all, the frozen 240 implies `n_backbone_minatar = 18` — **exactly**,
 not approximately.
 
-**DeepSea side — where the class-1 search is actually charged.** The 10 dev cells consume
-`8 cells × 2 sizes × 5 seeds + 2 rule-input cells × (10 + 5) seeds` = **110 runs** of the
-150–250 dev budget, leaving **40–140 runs for all tuning**. At 3 seeds × 2 dev sizes = 6 runs
-per candidate:
+**DeepSea side — where the class-1 search is actually charged.**
+
+> **CORRECTED (second pass), 2026-08-01.** The dev-cell subtotal below was **110** and is
+> **120**. The error: the old expression `8 cells × 2 sizes × 5 seeds + 2 rule-input cells ×
+> (10 + 5)` treated the ε-greedy DDQN reference as one of the ten factorial cells. It is not
+> — the reference arm is `(episodic|off|K1)`, which is outside the switchboard (confirmed
+> when the eight missing cell configs were written, main `b0f63ef`). So the reference is an
+> **eleventh** arm charged on top of the ten, and the count of non-rule-input factorial cells
+> is **9**, not 8. The recommendation is unchanged, but the slack is half what this section
+> previously claimed.
+
+The ten factorial cells plus the reference arm consume
+`9 non-rule-input cells × 2 sizes × 5 seeds + 2 rule-input arms × (10 + 5) seeds`
+= `90 + 30` = **120 runs** of the 150–250 dev budget, leaving **30–130 runs for all tuning**.
+At 3 seeds × 2 dev sizes = 6 runs per candidate:
 
 | `n_backbone` | `n_mini` (each of 2) | Candidates | Runs | Dev total | Verdict |
 |---|---|---|---|---|---|
-| 8 | 3 | 14 | 84 | 194 | fits comfortably |
-| **12** | **4** | **20** | **120** | **230** | **fits; recommended** |
-| 24 | 8 | 40 | 240 | 350 | **40% over the ceiling** |
+| 8 | 3 | 14 | 84 | 204 | fits comfortably |
+| **12** | **4** | **20** | **120** | **240** | **fits; recommended (10 runs of slack)** |
+| 24 | 8 | 40 | 240 | 360 | **44% over the ceiling** |
 
-At 5 seeds per candidate the ceiling binds much harder: only `n_backbone = 8, n_mini = 3` fits
-(140 runs, dev total exactly 250).
+At 5 seeds per candidate nothing fits: even `n_backbone = 8, n_mini = 3` costs 140 tuning runs
+for a dev total of 260, over the ceiling. Under the corrected count the 3-seeds-per-candidate
+rule (freeze item 1, owner-approved) is not merely preferable but **load-bearing**.
+
+<details>
+<summary>Superseded first-pass reasoning (retained for provenance)</summary>
+
+The first pass wrote: *"The 10 dev cells consume `8 cells × 2 sizes × 5 seeds + 2 rule-input
+cells × (10 + 5) seeds` = 110 runs … leaving 40–140 runs for all tuning"*, and tabulated dev
+totals of 194 / 230 / 350 with the note that at 5 seeds per candidate `n_backbone = 8,
+n_mini = 3` still fits at exactly 250. Every one of those figures is 10 runs low, and the
+5-seed claim was wrong outright: it fits only if the reference arm is not charged. The
+`8 + 2 = 10` decomposition happens to sum to the same 110 as a genuine ten-cell count would,
+which is why the error survived the first arithmetic check.
+
+</details>
 
 **So the first draft's `n_backbone = 24` was not "nearly implied by the budget" — it overspends
 the budget it was charged against by 40%.** The corrected recommendation is `n_backbone = 12`,
-`n_mini = 4`, at **3 seeds per tuning candidate**, which lands the DeepSea dev tier at 230 runs
+`n_mini = 4`, at **3 seeds per tuning candidate**, which lands the DeepSea dev tier at 240 runs
 inside its 150–250 envelope. Note that the tuning seed count is itself a value freeze item 1
 should state and does not; it is added to the proposed text below.
 
@@ -284,8 +309,10 @@ defect as items 2 and 7.
 
 ### Consequence for the run budget
 
-`(12 + 2 × 4) × 6 = 120` tuning runs; with the 110 dev-cell runs the DeepSea development tier
-totals **230**, inside its frozen ≈ 150–250 envelope. No other frozen count moves.
+`(12 + 2 × 4) × 6 = 120` tuning runs; with the 120 dev-cell runs (see the corrected count above
+— the ε-greedy DDQN reference is an eleventh arm, not one of the ten cells) the DeepSea
+development tier totals **240**, inside its frozen ≈ 150–250 envelope with 10 runs of slack.
+No other frozen count moves.
 
 ---
 
@@ -375,7 +402,7 @@ expected tuple updated.
      and ~1.35 GB for the whole sweep. **Nothing to pre-specify and nothing for a reviewer to
      question.** MinAtar `|S|` does not exist — the battery needs `Q*`.
    - **`n_backbone = 12`, `n_mini = 4`, 3 seeds per candidate** — 120 tuning runs, landing the
-     DeepSea dev tier at 230 of its 150–250 envelope. The first draft's 24 overspent it by 40%.
+     DeepSea dev tier at 240 of its 150–250 envelope. The first draft's 24 overspent it by 44%.
      If a MinAtar-side backbone confirmation is also run, the frozen 240 pilot runs imply
      **18 draws per tuning game** exactly.
    The one genuinely discretionary item left is the **tuning seed count** (3 recommended; 5 forces

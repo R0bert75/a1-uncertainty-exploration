@@ -130,14 +130,16 @@ against the frozen documents rather than against intuition, all three failed:
 - **`n_backbone = 24` overspends its budget by 40%.** Its justification (`192 + 32 + 12 = 236 ≈
   240`) was wrong three ways: the backbone is tuned *once* on DDQN, not per method; §3.4's 240
   counts runs, not configs; and the search runs on DeepSea development sizes, so it is charged
-  to the DeepSea dev budget (150–250 runs), not to MinAtar's 240. The 10 dev cells alone consume
-  110 of that, leaving 40–140 for all tuning. On the MinAtar side, 240 runs ÷ 5 pilot seeds
+  to the DeepSea dev budget (150–250 runs), not to MinAtar's 240. The dev cells plus the DDQN
+  reference arm alone consume 120 of that, leaving 30–130 for all tuning. On the MinAtar side, 240 runs ÷ 5 pilot seeds
   minus the 12-config `K_shared` sweep = 18 draws per tuning game, exactly.
 
 **A new gap surfaced from that audit and is also resolved:** the **per-candidate tuning seed
 count** is a value freeze item 1 should state and does not. Approved at **3 seeds** × 2
-development sizes = 6 runs per candidate, which puts the DeepSea development tier at 230 runs
-(110 cells + 120 tuning) inside its frozen 150–250 envelope.
+development sizes = 6 runs per candidate, which puts the DeepSea development tier at 240 runs
+(120 cells + 120 tuning) inside its frozen 150–250 envelope. Under this corrected count the
+3-seed rule is load-bearing rather than merely preferable: at 5 seeds per candidate no
+`n_backbone`/`n_mini` pair fits the envelope at all.
 
 **One is a process action, and it is overdue:** the external methodological review was
 time-boxed, and the window has elapsed with no reviewer response on record. Under the freeze
