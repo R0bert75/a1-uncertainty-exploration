@@ -1,6 +1,6 @@
 # Project status — plain language
 
-**As of 2026-07-30, `main` = `3f59fd7`, CI green, 335 tests.**
+**As of 2026-08-01, `main` = `6ca42d8`, CI green, 509 tests.**
 
 This document answers five questions in plain terms. It is a summary of the detailed
 documents, not a replacement for them: the authoritative sources are
@@ -30,9 +30,12 @@ language. Most empirical RL work has none of this.
 
 **Honest weaknesses:**
 
-- **Two freeze-list values were never filled in** (below). They were supposed to be filled
-  *before* the draft went to external review, so the reviewer is reading a document that is
-  less complete than it claims to be. This is the one genuine process failure so far.
+- **Five staged protocol fixes are pending stage 3** (Gaps 1–5 approved; Fix #4 exact
+  formulation + Fixes #5 and #6 from external review need owner sign-off). All are staged in
+  `protocol/decisions/staged_stage3_protocol_fixes.md`. They will be applied when the freeze
+  tag is cut — this is the intended channel, not a process failure. Fix #4 in particular is
+  a methodological decision (tuning objective), not a typo, and the reviewer noted it must be
+  disclosed to whoever closes Gate 1.
 - **Scope is large.** 17 implementation steps, ~2,500–3,000 runs, two benchmark families,
   four methods, nine diagnostics. The descope ladder and compute caps exist precisely
   because this risk was recognized, but the risk is real.
@@ -65,17 +68,21 @@ phase 2 matters as much as the code.
 
 ## 3. Where are we, and is the work correct and robust?
 
-**Position: end of the build phase, blocked before the freeze.** Steps 1–3 are done, 4–6 are
-partly done, 7–9 are blocked on protocol values that were never written down.
+**Position: build phase substantially complete; blocked before the freeze on process, not code.**
+Steps 1–9 are done or essentially done — the sweep driver, backbone tuning, both mini-searches,
+and six of nine §3.3 diagnostics all landed 2026-08-01. Only Diagnostic 8 (MinAtar state-selection
+rule, Fix #6) and the C11 per-contrast purity script remain as pre-freeze code items.
 
 **What runs today:** all four methods (DDQN, NoisyNet, BDQN, RP-BDQN) on both benchmark
 families, from one shared code path; DeepSea's exact `Q*`; byte-reproducible seeding; CSV
-logging on both reporting axes; figure generation; config-schema and purity audits.
+logging on both reporting axes; figure generation; config-schema and purity audits; the full
+backbone tuning sweep (winner c01, IQM 0.1583 — see §4 for the N=20 caveat); both mini-searches;
+and six of nine §3.3 diagnostics as post-hoc reducers over the committed substrate.
 
 **On correctness — the honest answer is "well-tested, not yet validated."** These are
 different things and the distinction matters:
 
-- **Well-tested: yes.** 335 tests. The strongest ones are not unit tests but *invariant*
+- **Well-tested: yes.** 509 tests. The strongest ones are not unit tests but *invariant*
   tests: re-running a config produces byte-identical output; the same replay data in
   `float32` and `uint8` storage produces identical batches; observations survive their dtype
   round-trip exactly across all six environments (2,000 steps each); a selection tie that
@@ -99,13 +106,17 @@ methodological review is for.
 
 ## 4. What decisions are pending?
 
-**The two blocking value decisions are RESOLVED — owner-approved 2026-07-30:**
+**All blocking protocol values are resolved. External review (2026-08-01) surfaced three
+additional items that need sign-off before Fix #4 / #5 / #6 are finalized:**
 
 | # | Decision | Approved value | Status |
 |---|---|---|---|
-| 1 | Probe-set construction rule (freeze item 7) | **Exhaustive: `\|S\| = N(N+1)/2`, no cap.** No MinAtar probe set. | ✅ signed off; unblocks step 9 |
-| 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`** | ✅ signed off; unblocks steps 5, 7, 8 |
-| 3 | Per-candidate tuning seeds (freeze item 1) | **3 seeds × 2 development sizes** | ✅ signed off (surfaced by the item-2 audit) |
+| 1 | Probe-set construction rule (freeze item 7) | **Exhaustive: `\|S\| = N(N+1)/2`, no cap.** No MinAtar probe set. | ✅ signed off 2026-07-30 |
+| 2 | Search distributions + tuning budget (freeze item 2) | **`n_backbone = 12`, `n_mini = 4`** | ✅ signed off 2026-07-30 |
+| 3 | Per-candidate tuning seeds (freeze item 1) | **3 seeds × 2 development sizes** | ✅ signed off 2026-07-30 |
+| 4 | Backbone tuning objective (Gap 4 + Fix #4) | **Discovery AUC, IQM pooled over 6 runs; tie-breaker cascade** | ✅ approved 2026-08-01; exact formulation in Fix #4 pending sign-off |
+| 5 | Probe-set details: terminal states, S×A scope, Q*-mapping hash (Fix #5) | See Fix #5 in `staged_stage3_protocol_fixes.md` | **Pending owner sign-off** |
+| 6 | Diagnostic 8 MinAtar state-selection rule (Fix #6) | Episode-start states, 100 seeds from `probe_set` stream (recommended) | **Pending owner sign-off** |
 
 The text is staged in `protocol/decisions/staged_stage3_protocol_fixes.md` and applied to
 `preregistration.md` at stage 3 — not now, because `prereg-draft` must stay a stable reference
@@ -114,6 +125,12 @@ pinned-bytes test proving no already-derived seed moved.
 
 Both recommendations, with the arithmetic behind them, are in
 `protocol/decisions/staged_stage3_protocol_fixes.md`.
+
+**Backbone tuning result (2026-08-01) — important caveat:** The completed sweep
+(`logs/search/backbone/search_record.json`) found 0/3 discovery at N=20 for all 12 candidates.
+Winner c01 (lr=6.054e-4, batch_size=128, hidden_width=64, target_update=100) was selected on
+the N=10 stratum alone. Any cross-size claim built on this backbone should state explicitly
+that the backbone configuration was never observed to discover at N=20 during tuning.
 
 **Audit note — the earlier recommendations in this file were wrong.** An earlier version
 recommended `|S| = 256` for DeepSea, `|S| = 512` for MinAtar, and `n_backbone = 24`. Checked
@@ -185,6 +202,7 @@ In order:
    drops the analogue.
 8. **Cut the final freeze tag**, apply the staged protocol fixes, mirror to OSF, then pilot.
 
-**The critical path is now code plus one process action, and they are parallel.** Step 2 is pure
-calendar time; steps 3–5 are roughly a day of implementation that can proceed alongside it.
-Nothing is waiting on a decision any more.
+**The critical path is process, not code.** The only code items remaining before the freeze
+are: Fix #6 sign-off + Diagnostic 8 implementation, and optionally the C11 per-contrast purity
+script. Everything else is owner/process actions (Gate 1 waiver or substitute reviewer, OSF
+mirror, sign-offs on Fixes #5 and #6). Those are independent of each other and all parallel.
