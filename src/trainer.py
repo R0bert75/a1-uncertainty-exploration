@@ -40,6 +40,7 @@ import time
 from pathlib import Path
 
 from src import config as config_mod
+from src.diagnostics import recorder as diag_recorder
 from src.utils.conventions import CSVLogger
 
 # Number of evenly spaced checkpoints logged over the episode budget. This is a
@@ -273,14 +274,26 @@ def run_seed(
     log: CSVLogger,
     *,
     n_checkpoints: int = DEFAULT_CHECKPOINTS,
+    diagnostics_dir: Path | None = None,
 ) -> dict[str, float]:
     """Run one seed end-to-end and log its online metrics. Returns a small summary dict.
 
     The agent and env are built by the frozen config factories (which seed every stream
     from ``master_seed``/``cell_id``/``seed_index``); this function adds no RNG of its own.
+
+    When ``diagnostics_dir`` is given, the §3.3 value-sample substrate is recorded at every
+    online checkpoint into that directory. This does **not** alter the run: measurement draws
+    from the ``noisynet_diag`` stream (or, for ensembles, from no stream at all), and nothing
+    diagnostic is written to the metrics CSV — so the CSV is byte-identical with and without
+    the flag, and gate C1 keeps its meaning. See :mod:`src.diagnostics.recorder`.
     """
     env = config_mod.build_env(cfg, seed_index)
     agent = config_mod.build_agent(cfg, seed_index)
+    recorder = (
+        diag_recorder.make_recorder(agent, cfg, seed_index)
+        if diagnostics_dir is not None
+        else None
+    )
     t_start = time.perf_counter()
 
     budget = cfg.data["env_budget"]
@@ -304,6 +317,8 @@ def run_seed(
         done = False
         ep_return = 0.0
         while not done:
+            if recorder is not None:
+                recorder.observe_state(obs)  # v(s) for diagnostic #5; no RNG, no policy effect
             action = agent.select_action(obs, step)
             next_obs, reward, terminated, truncated, _ = env.step(action)
             next_obs = next_obs.reshape(-1)
@@ -337,6 +352,9 @@ def run_seed(
                 is_t0=is_t0,
                 axis="online",
             )
+            if recorder is not None:
+                # Deliberately NOT logged to the CSV — see src/diagnostics/recorder.py.
+                recorder.record(step)
             ck_index += 1
             window_returns = []
 
@@ -345,6 +363,9 @@ def run_seed(
     # metrics CSV: wall-clock is machine-dependent, and gate C1 requires a (config, seed)
     # re-run to reproduce that CSV byte-for-byte. It travels in a sidecar instead.
     wall_clock_s = time.perf_counter() - t_start
+
+    if recorder is not None:
+        recorder.write(diagnostics_dir)
 
     return {
         "seed": float(seed_index),
@@ -389,6 +410,7 @@ def train(
     *,
     n_checkpoints: int = DEFAULT_CHECKPOINTS,
     n_eval_episodes: int = DEFAULT_EVAL_EPISODES,
+    diagnostics: bool = False,
 ) -> Path:
     """Run every committed seed of ``cfg`` into a single ``logs/<run_id>.csv``.
 
@@ -400,6 +422,13 @@ def train(
 
     Also serializes the resolved config to ``<out_dir>/resolved_config.json`` (C13 input),
     so the run's identity fingerprint is committed alongside its logs.
+
+    ``diagnostics=True`` additionally records the §3.3 value-sample substrate to
+    ``<out_dir>/diagnostics/``. It is a flag rather than a config field on purpose: it is not
+    part of the run's scientific identity, must not enter ``config_sha256``, and — because it
+    writes nothing to the CSV — leaves gate C1 exactly as strong as it was. It is a no-op for
+    MinAtar runs and for the ε-greedy DDQN reference, neither of which has a sample
+    distribution to record.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -410,6 +439,7 @@ def train(
         csv_path.unlink()  # append-only logger; start fresh for a clean re-run
 
     step_lane = config_mod.is_minatar(cfg.env)
+    diag_dir = (out_dir / "diagnostics") if diagnostics else None
     summaries: list[dict[str, float]] = []
     for seed_index in cfg.seeds:
         ctx = cfg.run_context(seed_index)
@@ -419,7 +449,15 @@ def train(
                     run_seed_steps(cfg, seed_index, log, n_eval_episodes=n_eval_episodes)
                 )
             else:
-                summaries.append(run_seed(cfg, seed_index, log, n_checkpoints=n_checkpoints))
+                summaries.append(
+                    run_seed(
+                        cfg,
+                        seed_index,
+                        log,
+                        n_checkpoints=n_checkpoints,
+                        diagnostics_dir=diag_dir,
+                    )
+                )
 
     _write_compute_sidecar(out_dir, cfg, summaries)
 
@@ -461,6 +499,14 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_EVAL_EPISODES,
         help="frozen-policy evaluation episodes per checkpoint (MinAtar/Part-B lane only)",
     )
+    ap.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help=(
+            "record the §3.3 value-sample substrate to <out>/diagnostics/ (DeepSea only; "
+            "no-op for the DDQN reference). Does not change the run or the metrics CSV."
+        ),
+    )
     args = ap.parse_args(argv)
 
     cfg = config_mod.load_config(args.config)
@@ -469,6 +515,7 @@ def main(argv: list[str] | None = None) -> int:
         args.out,
         n_checkpoints=args.checkpoints,
         n_eval_episodes=args.eval_episodes,
+        diagnostics=args.diagnostics,
     )
     return 0
 
