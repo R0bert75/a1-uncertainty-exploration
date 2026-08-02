@@ -1,6 +1,6 @@
 # Project status — plain language
 
-**As of 2026-08-01, `main` = `6ca42d8`, CI green, 509 tests.**
+**As of 2026-08-01, `main` = `1720e65`, CI green, 540 tests.**
 
 This document answers five questions in plain terms. It is a summary of the detailed
 documents, not a replacement for them: the authoritative sources are
@@ -83,7 +83,7 @@ and six of nine §3.3 diagnostics as post-hoc reducers over the committed substr
 **On correctness — the honest answer is "well-tested, not yet validated."** These are
 different things and the distinction matters:
 
-- **Well-tested: yes.** 509 tests. The strongest ones are not unit tests but *invariant*
+- **Well-tested: yes.** 540 tests. The strongest ones are not unit tests but *invariant*
   tests: re-running a config produces byte-identical output; the same replay data in
   `float32` and `uint8` storage produces identical batches; observations survive their dtype
   round-trip exactly across all six environments (2,000 steps each); a selection tie that
