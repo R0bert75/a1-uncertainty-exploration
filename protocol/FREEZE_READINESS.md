@@ -14,15 +14,14 @@
 > procedure. This is a valid, pre-registered outcome; it is not a shortcut. The final freeze
 > tag cannot be cut until this record exists.
 
-> **External review received 2026-08-01.** A full methodological review was received (see
-> `protocol/decisions/staged_stage3_protocol_fixes.md` Fix #4–#6). Three additional staged
-> items arise from it: Fix #4 (exact tuning-objective formulation, backbone sweep N=20
-> caveat), Fix #5 (three probe-set detail freezes), Fix #6 (Diagnostic 8 MinAtar
-> state-selection rule). Fixes #5 and #6 need owner sign-off before stage 3. Fix #4's
-> exact formulation is staged and ready for review. The reviewer also noted that the final
-> freeze candidate should be presented as an explicit diff against `prereg-draft` — see the
-> staging note in Fix #4.
-
+> **Internal methodological review 2026-08-01 — NOT the Gate-1 external pass.** The project
+> owner provided methodological feedback that generated Fixes #4–#6 (see
+> `protocol/decisions/staged_stage3_protocol_fixes.md`): Fix #4 (exact tuning-objective
+> formulation + tie-breaker cascade + N=20 zero-stratum disclosure), Fix #5 (three probe-set
+> detail freezes, signed off with clarifications), Fix #6 (Diagnostic 8 renamed and signed
+> off). All six staged fixes are now decided; Diagnostic 8 is implemented (commit `1720e65`).
+> **Gate 1 remains open: the external reviewer has not yet responded.** The substitute-reviewer
+> or waiver deadline is ~2026-08-05. This internal review does **not** satisfy Gate 1.
 > **Missing-values update 2026-07-30 — CLOSED.** A pre-freeze audit found that two freeze-list
 > items claimed values the draft did not actually contain (item 7 probe-set construction, item 2
 > search distributions/budget), and a third defect surfaced from auditing the second (item 1 has
